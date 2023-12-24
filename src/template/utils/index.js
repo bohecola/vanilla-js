@@ -16,16 +16,16 @@ export function cloneDeep(origin) {
 }
 
 // 数组扁平化
-export function flat(arr) {
+export function flat1(arr) {
   while (arr.some(Array.isArray)) {
     arr = [].concat(...arr);
   }
   return arr;
 }
 
-export function flat(arr) {
+export function flat2(arr) {
   return arr.reduce((prev, item) => {
-    return prev.concat(Array.isArray(item) ? flat(item) : item);
+    return prev.concat(Array.isArray(item) ? flat2(item) : item);
   }, []);
 }
 
