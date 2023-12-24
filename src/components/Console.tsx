@@ -5,7 +5,7 @@ export interface ConsoleHandle {
   clear: () => void;
 }
 
-export default forwardRef<ConsoleHandle>(function Console(props, ref) {
+export default forwardRef<ConsoleHandle>(function Console(_props, ref) {
 
   const [logs, setLogs] = useState<string[]>([])
 
