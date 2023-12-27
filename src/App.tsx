@@ -5,7 +5,7 @@ import Editor, { EditorHandle } from './components/Editor';
 import Console, { ConsoleHandle } from "./components/Console";
 
 function App() {
-  // 代码模块
+  // 代码模版
   const modules = useTemplate()
   // 选项
   const options = Object.keys(modules).map(key => ({ value: key, label: key.replace("../", "") }))
@@ -13,7 +13,8 @@ function App() {
   const utilsPath = '../template/overrides/call.js'
 
   // 选择器 change
-  function handleChange(val: string) {    
+  function handleChange(val: string) { 
+    consoleRef.current?.clear()   
     modules[val]().then((res) => {
       editorRef.current?.setValue(res)
     })
@@ -30,6 +31,7 @@ function App() {
     })
   }, [])
 
+  // iframe 节点
   const iframeRef = useRef<HTMLIFrameElement>(null)
   // 运行
   function runCode() {
