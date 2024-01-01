@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState, useImperativeHandle, forwardRef } from 'react';
 
 export interface ConsoleHandle {
