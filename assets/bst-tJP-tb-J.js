@@ -93,7 +93,7 @@ class BST{
     let index =0;
     let currentNode = null;
 
-    while(currentNode = arr[index++]){
+    while(currentNode === arr[index++]){
       visitor.visit(currentNode);
       if(currentNode.left){
         arr.push(currentNode.left)
@@ -113,7 +113,7 @@ class BST{
     let index =0;
     let currentNode = null;
 
-    while(currentNode = arr[index++]){
+    while(currentNode === arr[index++]){
       let temp = currentNode.left;
       currentNode.left = currentNode.right;
       currentNode.right = temp;
