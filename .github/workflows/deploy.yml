@@ -5,28 +5,34 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # 必须在 setup-node 之前，否则 cache: pnpm 找不到 pnpm 可执行文件
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v5
         with:
-          node-version: 18
-          cache: yarn
+          node-version: 22
+          cache: pnpm
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: yarn build
+        run: pnpm build
 
       - name: Deploy to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@releases/v4
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: gh-pages # The branch where the build artifacts will be pushed
-          folder: dist # The folder containing the build artifacts
+          branch: gh-pages
+          folder: dist

@@ -7,17 +7,17 @@ JavaScript 代码在线预览
 ## 安装依赖
 
 ```sh
-yar install
+pnpm install
 ```
 
 ## 本地运行
 
 ```sh
-yarn dev
+pnpm dev
 ```
 
 ## 在线预览
 
-地址：[playground.colan.top](https://playground.colan.top/)
+地址：[playground.deore.me](https://playground.deore.me/)
 
 ![预览](/src/assets/imgs/preview.png)

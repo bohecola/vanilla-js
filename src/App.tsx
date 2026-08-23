@@ -29,7 +29,7 @@ function App() {
     modules[utilsPath]().then((res) => {
       editorRef.current?.setValue(res);
     })
-  }, [])
+  }, [modules, utilsPath])
 
   // iframe 节点
   const iframeRef = useRef<HTMLIFrameElement>(null)
