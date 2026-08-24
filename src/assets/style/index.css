@@ -5,7 +5,8 @@
 
 /*
   preflight 未启用（避免与 antd 样式冲突），这里单独补回 preflight 里
-  跟边框相关的三条规则，否则 Tailwind 的 border-* 工具类不会显示边框。
+  跟边框、按钮相关的几条规则，否则 Tailwind 的 border-* 工具类不会显示边框，
+  且 <button> 会保留浏览器默认的浅色背景/边框。
 */
 @layer base {
   *,
@@ -20,5 +21,38 @@
   ::before,
   ::after {
     --tw-content: '';
+  }
+
+  /* 重置按钮默认样式：透明背景、继承字体、去掉原生 appearance，
+     否则折叠/展开等交互按钮会显示浏览器默认的浅色底 */
+  button,
+  input,
+  optgroup,
+  select,
+  textarea {
+    font-family: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    font-size: 100%;
+    font-weight: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+  }
+
+  button,
+  [role="button"] {
+    background-color: transparent;
+    background-image: none;
+    border-radius: 0;
+    padding: 0;
+    cursor: pointer;
+    -webkit-appearance: button;
+    appearance: button;
+  }
+
+  button:focus {
+    outline: 1px dotted;
+    outline-offset: 2px;
   }
 }
