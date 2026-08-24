@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { Select, Button, Space, Tag, Divider } from 'antd'
-import { PlayCircleOutlined, FileAddOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, FileAddOutlined, DownloadOutlined } from '@ant-design/icons'
 import Editor, { EditorHandle } from './components/Editor'
 import Console, { ConsoleHandle } from './components/Console'
 import { listTemplates, loadTemplate } from './hooks'
@@ -60,6 +60,23 @@ function App() {
     handleSelectChange(BLANK_TEMPLATE)
   }
 
+  // 下载：把编辑器当前代码导出为 .js 文件
+  function handleDownload() {
+    const code = editorRef.current?.getValue() ?? ''
+    const filename =
+      currentPath === BLANK_TEMPLATE
+        ? 'code.js'
+        : (currentPath.split('/').pop() ?? 'code.js')
+
+    const blob = new Blob([code], { type: 'text/javascript;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   // 运行：重建 iframe（srcdoc 全新文档）清空上次的全局状态与定时器
   function runCode() {
     const code = editorRef.current?.getValue() ?? ''
@@ -98,6 +115,9 @@ function App() {
             popupMatchSelectWidth={320}
             variant="filled"
           />
+          <Button icon={<DownloadOutlined />} onClick={handleDownload}>
+            下载
+          </Button>
           <Button
             type="primary"
             icon={<PlayCircleOutlined />}
