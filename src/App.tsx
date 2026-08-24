@@ -71,7 +71,7 @@ function App() {
           <span className="inline-block h-3 w-3 rounded-full bg-sky-400" />
           JS Playground
         </div>
-        <Divider type="vertical" className="border-slate-700" />
+        <Divider orientation="vertical" className="border-slate-700" />
         <Space size={8}>
           <Select
             value={currentPath}
