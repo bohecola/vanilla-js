@@ -129,7 +129,7 @@ function App() {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-slate-950 text-slate-100">
       {/* 顶部工具栏 */}
-      <header className="flex items-center gap-3 border-b border-slate-800 bg-slate-900 px-4 py-3">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-800 bg-slate-900 px-4 py-3">
         <div className="flex items-center gap-2 text-base font-semibold">
           <span className="inline-block h-3 w-3 rounded-full bg-sky-400" />
           JS Playground
@@ -142,14 +142,16 @@ function App() {
           <Button icon={<UploadOutlined />} onClick={handleImport}>
             导入
           </Button>
-          <Select
-            value={currentPath}
-            style={{ width: 300 }}
-            options={options}
-            onChange={handleSelectChange}
-            popupMatchSelectWidth={320}
-            variant="filled"
-          />
+          <div className="w-[200px] sm:w-[300px]">
+            <Select
+              value={currentPath}
+              style={{ width: '100%' }}
+              options={options}
+              onChange={handleSelectChange}
+              popupMatchSelectWidth={320}
+              variant="filled"
+            />
+          </div>
         </Space>
         <div className="ml-auto flex items-center gap-3">
           <Button
@@ -172,9 +174,9 @@ function App() {
       </header>
 
       {/* 主区域：编辑器 + 输出 */}
-      <main className="flex min-h-0 flex-1 gap-3 p-3">
+      <main className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:flex-row">
         {/* 左：编辑器 */}
-        <section className="flex min-w-0 flex-[1.2] flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900 md:flex-[1.2]">
           <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
             <span className="text-sm text-slate-400">Editor</span>
             <Button size="small" icon={<DownloadOutlined />} onClick={handleDownload}>
@@ -187,7 +189,7 @@ function App() {
         </section>
 
         {/* 右：输出 */}
-        <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
           <div className="border-b border-slate-800 px-3 py-2 text-sm text-slate-400">
             Console
           </div>
