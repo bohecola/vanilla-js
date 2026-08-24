@@ -182,10 +182,7 @@ function App() {
           <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
             <div className="flex min-w-0 items-center gap-2">
               <span className="text-sm text-slate-400">Editor</span>
-              <Tag
-                color="blue"
-                style={{ marginInlineEnd: 0, maxWidth: '50%', overflow: 'hidden', textOverflow: 'ellipsis' }}
-              >
+              <Tag color="blue" style={{ marginInlineEnd: 0 }}>
                 {currentLabel}
               </Tag>
             </div>
