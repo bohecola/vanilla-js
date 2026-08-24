@@ -8,6 +8,8 @@ import { buildRunnerDoc } from './lib/runner'
 
 // 空白模板：下拉框中的特殊选项，选中后清空编辑器，供自由编写测试代码
 const BLANK_TEMPLATE = '__blank__'
+// 导入文件：选中本地文件后进入的临时状态，展示为「导入：文件名」
+const IMPORTED_TEMPLATE = '__imported__'
 
 function App() {
   const templates = listTemplates()
@@ -23,6 +25,7 @@ function App() {
 
   const options = [
     { value: BLANK_TEMPLATE, label: '空白模板' },
+    ...(importedName ? [{ value: IMPORTED_TEMPLATE, label: `导入：${importedName}` }] : []),
     ...templates.map((value) => ({
       value,
       label: value.replace('../template/', ''),
@@ -42,20 +45,24 @@ function App() {
     []
   )
 
-  // 当前模板变化时：空白模板清空编辑器，否则加载对应模板
+  // 当前选中变化时：空白/导入都不加载（由显式操作控制），否则加载对应模板
   useEffect(() => {
-    if (currentPath === BLANK_TEMPLATE) {
-      editorRef.current?.setValue('')
-    } else {
-      loadIntoEditor(currentPath)
+    if (currentPath === BLANK_TEMPLATE || currentPath === IMPORTED_TEMPLATE) {
+      return
     }
+    loadIntoEditor(currentPath)
   }, [currentPath, loadIntoEditor])
 
-  // 切换模板：更新选中项并清空 console（加载逻辑交给上面的 effect）
+  // 切换选中项：清空 console；选「空白模板」时清空编辑器与导入名，选其他模板时清导入名
   function handleSelectChange(path: string) {
     setCurrentPath(path)
-    setImportedName(null)
     consoleRef.current?.clear()
+    if (path === BLANK_TEMPLATE) {
+      setImportedName(null)
+      editorRef.current?.setValue('')
+    } else if (path !== IMPORTED_TEMPLATE) {
+      setImportedName(null)
+    }
   }
 
   // 新建：切到空白模板，清空编辑器与 console
@@ -76,6 +83,7 @@ function App() {
       .then((text) => {
         editorRef.current?.setValue(text)
         setImportedName(file.name)
+        setCurrentPath(IMPORTED_TEMPLATE)
         consoleRef.current?.clear()
       })
       .catch((err) => console.error('读取文件失败', err))
@@ -157,7 +165,11 @@ function App() {
         <div className="ml-auto">
           <Tag color="blue" style={{ marginInlineEnd: 0 }}>
             {importedName ??
-              (currentPath === BLANK_TEMPLATE ? '空白模板' : currentPath.replace('../template/', ''))}
+              (currentPath === BLANK_TEMPLATE
+                ? '空白模板'
+                : currentPath === IMPORTED_TEMPLATE
+                  ? '导入文件'
+                  : currentPath.replace('../template/', ''))}
           </Tag>
         </div>
       </header>
