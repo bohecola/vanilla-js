@@ -1,4 +1,4 @@
-# vanilla-js playground
+# js-playground
 
 JavaScript 代码在线预览
 

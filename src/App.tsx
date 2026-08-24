@@ -164,7 +164,7 @@ function App() {
         </Space>
         <div className="ml-auto">
           <a
-            href="https://github.com/bohecola/vanilla-js"
+            href="https://github.com/bohecola/js-playground"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center text-slate-400 transition-colors hover:text-sky-300"
