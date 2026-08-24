@@ -146,10 +146,14 @@ function Inspector({ value, name, depth = 0 }: InspectorProps) {
     <div className="leading-5">
       {toggle}
       {open && (
-        <div className="ml-3 border-l border-slate-700 pl-2">
-          {entries.map(([k, v]) => (
-            <Inspector key={k} value={v} name={k} depth={depth + 1} />
-          ))}
+        <div className="relative">
+          {/* 缩进引导竖线：与上级箭头的水平位置对齐 */}
+          <span className="absolute inset-y-0 left-[3px] w-px bg-slate-700" />
+          <div className="ml-4">
+            {entries.map(([k, v]) => (
+              <Inspector key={k} value={v} name={k} depth={depth + 1} />
+            ))}
+          </div>
         </div>
       )}
     </div>
