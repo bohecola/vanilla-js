@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, type ChangeEvent } from 'react'
-import { Select, Button, Space, Divider } from 'antd'
+import { Select, Button, Space, Divider, Tag } from 'antd'
 import { PlayCircleOutlined, FileAddOutlined, DownloadOutlined, UploadOutlined, GithubOutlined } from '@ant-design/icons'
 import Editor, { EditorHandle } from './components/Editor'
 import Console, { ConsoleHandle } from './components/Console'
@@ -182,7 +182,12 @@ function App() {
           <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
             <div className="flex min-w-0 items-center gap-2">
               <span className="text-sm text-slate-400">Editor</span>
-              <span className="truncate text-sm text-sky-400">{currentLabel}</span>
+              <Tag
+                color="blue"
+                style={{ marginInlineEnd: 0, maxWidth: '50%', overflow: 'hidden', textOverflow: 'ellipsis' }}
+              >
+                {currentLabel}
+              </Tag>
             </div>
             <Space size={8}>
               <Button size="small" icon={<DownloadOutlined />} onClick={handleDownload}>
