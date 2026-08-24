@@ -103,11 +103,11 @@ function Inspector({ value, name, depth = 0 }: InspectorProps) {
     <button
       type="button"
       onClick={() => setOpen((o) => !o)}
-      className="cursor-pointer select-none text-left hover:text-sky-300 focus:outline-none"
+      className="cursor-pointer select-none text-left text-slate-400 hover:text-sky-300 focus:outline-none"
     >
       <span className="mr-1 inline-block w-3 text-slate-500">{open ? '▾' : '▸'}</span>
       {name != null && <span className="text-slate-400">{name}: </span>}
-      <span className="text-slate-200">
+      <span className="text-slate-400">
         {isArray ? arrayPreview(value as unknown[]) : objectPreview(value as Record<string, unknown>)}
       </span>
     </button>
