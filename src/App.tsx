@@ -180,7 +180,10 @@ function App() {
         {/* 左：编辑器 */}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900 md:flex-[1.2]">
           <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
-            <span className="truncate text-sm text-slate-300">{currentLabel}</span>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="text-sm text-slate-400">Editor</span>
+              <span className="truncate text-sm text-sky-400">{currentLabel}</span>
+            </div>
             <Space size={8}>
               <Button size="small" icon={<DownloadOutlined />} onClick={handleDownload}>
                 下载
