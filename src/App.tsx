@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { Select, Button, Space, Tag, Divider } from 'antd'
-import { PlayCircleOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, FileAddOutlined } from '@ant-design/icons'
 import Editor, { EditorHandle } from './components/Editor'
 import Console, { ConsoleHandle } from './components/Console'
 import { listTemplates, loadTemplate } from './hooks'
@@ -55,6 +55,11 @@ function App() {
     consoleRef.current?.clear()
   }
 
+  // 新建：切到空白模板，清空编辑器与 console
+  function handleNewFile() {
+    handleSelectChange(BLANK_TEMPLATE)
+  }
+
   // 运行：重建 iframe（srcdoc 全新文档）清空上次的全局状态与定时器
   function runCode() {
     const code = editorRef.current?.getValue() ?? ''
@@ -82,6 +87,9 @@ function App() {
         </div>
         <Divider orientation="vertical" className="border-slate-700" />
         <Space size={8}>
+          <Button icon={<FileAddOutlined />} onClick={handleNewFile}>
+            新建
+          </Button>
           <Select
             value={currentPath}
             style={{ width: 300 }}
