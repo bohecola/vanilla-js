@@ -1,22 +1,31 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { ConfigProvider, theme } from 'antd'
+import zhCN from 'antd/locale/zh_CN.js'
 import App from './App.tsx'
-// import { ConfigProvider, theme } from "antd";
 import './assets/style/index.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {/* <ConfigProvider
+    <ConfigProvider
+      locale={zhCN}
       theme={{
+        algorithm: theme.darkAlgorithm,
         token: {
-          colorBgContainer: "#1e293b",
-          colorBorder: "#475569",
-          colorBgElevated: "#475569"
+          colorBgContainer: '#1e293b',
+          colorBgElevated: '#1e293b',
+          colorBorder: '#334155',
+          colorPrimary: '#38bdf8',
+          borderRadius: 8,
         },
-        algorithm: theme.darkAlgorithm
+        components: {
+          Select: {
+            optionSelectedBg: '#0f172a',
+          },
+        },
       }}
-    > */}
+    >
       <App />
-    {/* </ConfigProvider> */}
+    </ConfigProvider>
   </React.StrictMode>,
 )
