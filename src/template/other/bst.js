@@ -1,5 +1,13 @@
-class Node{
-  constructor(element, parent){
+/**
+ * 二叉搜索树（Binary Search Tree）
+ *
+ * 每个节点最多两个子节点：左子树值较小、右子树值较大。这里通过自定义 compare
+ * 函数支持任意元素类型（例如按对象的 age 字段比较）。
+ */
+
+/** 树节点：保存元素值、父节点引用，以及左右子节点 */
+class Node {
+  constructor(element, parent) {
     this.element = element;
     this.parent = parent;
     this.left = null;
@@ -7,122 +15,118 @@ class Node{
   }
 }
 
-class BST{
-  constructor(compare){
+/** 二叉搜索树 */
+class BST {
+  constructor(compare) {
     this.root = null;
     this.size = 0;
     this.compare = compare || this.compare;
   }
 
-  add(element){
-    if(this.root === null){
+  /** 插入一个元素：从根节点出发，按比较结果一路走到空位 */
+  add(element) {
+    if (this.root === null) {
       this.root = new Node(element, null);
       this.size++;
       return;
-    }else {
+    } else {
       let currentNode = this.root;
       let parent = null;
       let compare = 0;
-      while(currentNode){
-        // compare = element - currentNode.element;
-       compare =  this.compare(element, currentNode.element);
+      while (currentNode) {
+        compare = this.compare(element, currentNode.element);
         parent = currentNode;
-        if(compare > 0){
+        if (compare > 0) {
           currentNode = currentNode.right;
-        }else{
+        } else {
           currentNode = currentNode.left;
         }
       }
-      let newNode = new Node(element, parent);
-
-      if(compare > 0){
+      const newNode = new Node(element, parent);
+      if (compare > 0) {
         parent.right = newNode;
-      }else{
+      } else {
         parent.left = newNode;
       }
       this.size++;
     }
   }
 
-  compare(a, b){
-    return a -b;
+  /** 默认比较函数：按数值相减 */
+  compare(a, b) {
+    return a - b;
   }
-  //前序遍历;
-  preorderTraversal(){
+
+  /** 前序遍历（根 → 左 → 右） */
+  preorderTraversal() {
     const traversal = (node) => {
-      if(node === null)  return;
+      if (node === null) return;
       console.log(node.element);
       traversal(node.left);
       traversal(node.right);
-    }
-
+    };
     traversal(this.root);
   }
 
-  inorderTraversal(visitor){
-    if(visitor === null)  return ;
+  /** 中序遍历（左 → 根 → 右），配合访问者模式输出 */
+  inorderTraversal(visitor) {
+    if (visitor === null) return;
     const traversal = (node) => {
-      if(node === null)  return;
-      
+      if (node === null) return;
       traversal(node.left);
-      //console.log(node.element);
       visitor.visit(node);
       traversal(node.right);
-    }
-
+    };
     traversal(this.root);
   }
 
-  postorderTraversal(){
+  /** 后序遍历（左 → 右 → 根） */
+  postorderTraversal() {
     const traversal = (node) => {
-      if(node === null)  return;
+      if (node === null) return;
       traversal(node.left);
       traversal(node.right);
       console.log(node.element);
-    }
-
+    };
     traversal(this.root);
   }
 
-  levelOrderTraversal(visitor){
+  /** 层序遍历（从上到下逐层） */
+  levelOrderTraversal(visitor) {
+    if (this.root == null || visitor == null) return;
 
-    if(this.root == null || visitor == null) return ;
-
-    let arr = [this.root];
-
-    let index =0;
+    const arr = [this.root];
+    let index = 0;
     let currentNode = null;
 
-    while(currentNode === arr[index++]){
+    while (currentNode === arr[index++]) {
       visitor.visit(currentNode);
-      if(currentNode.left){
-        arr.push(currentNode.left)
+      if (currentNode.left) {
+        arr.push(currentNode.left);
       }
-
-      if(currentNode.right){
+      if (currentNode.right) {
         arr.push(currentNode.right);
       }
     }
-
   }
 
-  invertTree(){
-    if(this.root == null ) return ;
+  /** 翻转二叉树：交换每个节点的左右子树 */
+  invertTree() {
+    if (this.root == null) return;
 
-    let arr = [this.root];
-    let index =0;
+    const arr = [this.root];
+    let index = 0;
     let currentNode = null;
 
-    while(currentNode === arr[index++]){
-      let temp = currentNode.left;
+    while (currentNode === arr[index++]) {
+      const temp = currentNode.left;
       currentNode.left = currentNode.right;
       currentNode.right = temp;
 
-      if(currentNode.left){
-        arr.push(currentNode.left)
+      if (currentNode.left) {
+        arr.push(currentNode.left);
       }
-
-      if(currentNode.right){
+      if (currentNode.right) {
         arr.push(currentNode.right);
       }
     }
@@ -131,42 +135,29 @@ class BST{
   }
 }
 
-//let arr = [10, 8, 6, 19, 15 , 22 , 20];
-let arr = [{name:'zhangsan1', age: 10},
-    {name:'zhangsan2', age: 8},
-    {name:'zhangsan3', age: 6},
-    {name:'zhangsan4', age: 19},
-    {name:'zhangsan5', age: 15},
-    {name:'zhangsan6', age: 22},
-    {name:'zhangsan7', age: 20},
-    ];
+// 测试数据：按 age 字段构建二叉搜索树
+const arr = [
+  { name: 'zhangsan1', age: 10 },
+  { name: 'zhangsan2', age: 8 },
+  { name: 'zhangsan3', age: 6 },
+  { name: 'zhangsan4', age: 19 },
+  { name: 'zhangsan5', age: 15 },
+  { name: 'zhangsan6', age: 22 },
+  { name: 'zhangsan7', age: 20 },
+];
 
-    //arr.sort((a, b) => {a.age -b.age});
-let bst = new BST((a ,b) => {
-   return a.age - b.age;
-});
-
-arr.forEach(item => {
+const bst = new BST((a, b) => a.age - b.age);
+arr.forEach((item) => {
   bst.add(item);
-})
-
-console.dir(bst, {
-  depth: 100
 });
 
-// 访问者模式;  控制中转;
-// bst.levelOrderTraversal({
-//   visit(node){
-//     console.log(node.element);
-//   }
-// })
+console.dir(bst, { depth: 100 });
 
-console.dir(bst.invertTree(), {
-  depth: 100
-});
+// 翻转二叉树后再打印
+console.dir(bst.invertTree(), { depth: 100 });
 
-
-// 1. 前序遍历(先序遍历)：先访问根节点， 然后是左子树， 右子树;(纵深的过程)
-// 2. 中序遍历;  左子树  根节点  右子树  (从大到小排列)
-// 3. 后序遍历  左子树  右子树  根节点  (先要操作所有子树)
-// 4. 层序遍历; 至上而下遍历所有节点;
+// 遍历方式小结：
+// 1. 前序遍历（先序）：根 → 左 → 右
+// 2. 中序遍历：左 → 根 → 右（升序输出）
+// 3. 后序遍历：左 → 右 → 根
+// 4. 层序遍历：从上到下逐层

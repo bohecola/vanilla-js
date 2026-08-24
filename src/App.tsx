@@ -6,6 +6,9 @@ import Console, { ConsoleHandle } from './components/Console'
 import { listTemplates, loadTemplate } from './hooks'
 import { buildRunnerDoc } from './lib/runner'
 
+// 空白模板：下拉框中的特殊选项，选中后清空编辑器，供自由编写测试代码
+const BLANK_TEMPLATE = '__blank__'
+
 function App() {
   const templates = listTemplates()
   const [currentPath, setCurrentPath] = useState<string>('../template/overrides/call.js')
@@ -16,10 +19,13 @@ function App() {
   const consoleRef = useRef<ConsoleHandle>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
-  const options = templates.map((value) => ({
-    value,
-    label: value.replace('../template/', ''),
-  }))
+  const options = [
+    { value: BLANK_TEMPLATE, label: '空白模板' },
+    ...templates.map((value) => ({
+      value,
+      label: value.replace('../template/', ''),
+    })),
+  ]
 
   // 加载某个模板到编辑器
   const loadIntoEditor = useCallback(
@@ -34,16 +40,19 @@ function App() {
     []
   )
 
-  // 初始加载默认模板
+  // 当前模板变化时：空白模板清空编辑器，否则加载对应模板
   useEffect(() => {
-    loadIntoEditor(currentPath)
+    if (currentPath === BLANK_TEMPLATE) {
+      editorRef.current?.setValue('')
+    } else {
+      loadIntoEditor(currentPath)
+    }
   }, [currentPath, loadIntoEditor])
 
-  // 切换模板：清空 console 并重新加载
+  // 切换模板：更新选中项并清空 console（加载逻辑交给上面的 effect）
   function handleSelectChange(path: string) {
     setCurrentPath(path)
     consoleRef.current?.clear()
-    loadIntoEditor(path)
   }
 
   // 运行：重建 iframe（srcdoc 全新文档）清空上次的全局状态与定时器
@@ -92,7 +101,7 @@ function App() {
         </Space>
         <div className="ml-auto">
           <Tag color="blue" style={{ marginInlineEnd: 0 }}>
-            {currentPath.replace('../template/', '')}
+            {currentPath === BLANK_TEMPLATE ? '空白模板' : currentPath.replace('../template/', '')}
           </Tag>
         </div>
       </header>
