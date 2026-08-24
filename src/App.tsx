@@ -150,9 +150,8 @@ function App() {
             popupMatchSelectWidth={320}
             variant="filled"
           />
-          <Button icon={<DownloadOutlined />} onClick={handleDownload}>
-            下载
-          </Button>
+        </Space>
+        <div className="ml-auto flex items-center gap-3">
           <Button
             type="primary"
             icon={<PlayCircleOutlined />}
@@ -161,8 +160,6 @@ function App() {
           >
             Run
           </Button>
-        </Space>
-        <div className="ml-auto">
           <Tag color="blue" style={{ marginInlineEnd: 0 }}>
             {importedName ??
               (currentPath === BLANK_TEMPLATE
@@ -178,8 +175,11 @@ function App() {
       <main className="flex min-h-0 flex-1 gap-3 p-3">
         {/* 左：编辑器 */}
         <section className="flex min-w-0 flex-[1.2] flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
-          <div className="border-b border-slate-800 px-3 py-2 text-sm text-slate-400">
-            Editor
+          <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
+            <span className="text-sm text-slate-400">Editor</span>
+            <Button size="small" icon={<DownloadOutlined />} onClick={handleDownload}>
+              下载
+            </Button>
           </div>
           <div className="min-h-0 flex-1">
             <Editor ref={editorRef} language="javascript" />
