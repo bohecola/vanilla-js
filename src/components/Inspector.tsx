@@ -103,11 +103,11 @@ function Inspector({ value, name, depth = 0 }: InspectorProps) {
     <button
       type="button"
       onClick={() => setOpen((o) => !o)}
-      className="cursor-pointer select-none text-left text-slate-400 hover:text-sky-300 focus:outline-none"
+      className="cursor-pointer select-none text-left text-slate-500 hover:text-sky-300 focus:outline-none"
     >
-      <span className="mr-1 inline-block w-3 text-slate-500">{open ? '▾' : '▸'}</span>
-      {name != null && <span className="text-slate-400">{name}: </span>}
-      <span className="text-slate-400">
+      <span className="mr-1 inline-block w-3 text-slate-600">{open ? '▾' : '▸'}</span>
+      {name != null && <span className="text-slate-500">{name}: </span>}
+      <span className="text-slate-500">
         {isArray ? arrayPreview(value as unknown[]) : objectPreview(value as Record<string, unknown>)}
       </span>
     </button>
@@ -117,7 +117,7 @@ function Inspector({ value, name, depth = 0 }: InspectorProps) {
   if (isMarked(value) && (value.__type === 'Map' || value.__type === 'Set')) {
     return (
       <div className={name != null ? 'pl-3 leading-5' : 'leading-5'}>
-        {name != null && <span className="text-slate-400">{name}: </span>}
+        {name != null && <span className="text-slate-500">{name}: </span>}
         <span className="text-amber-300">
           {value.__type === 'Map'
             ? `Map(${value.entries.length})`
@@ -131,7 +131,7 @@ function Inspector({ value, name, depth = 0 }: InspectorProps) {
   if (!isArray && !isObj) {
     return (
       <div className={name != null ? 'pl-3 leading-5' : 'leading-5'}>
-        {name != null && <span className="text-slate-400">{name}: </span>}
+        {name != null && <span className="text-slate-500">{name}: </span>}
         <ValueText value={value} />
       </div>
     )
