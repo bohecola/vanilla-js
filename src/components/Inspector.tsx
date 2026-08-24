@@ -1,21 +1,77 @@
 import { useState } from 'react'
 
-// 用于在 Console 里递归渲染序列化后的值（来自 init.js 的 safeSerialize）
-// 支持对象/数组展开折叠、内建类型标记（Map/Set）、循环引用占位等
+// init.js 序列化后值的类型。普通 JSON 值（string/number/boolean/array/plain object）
+// 直接透传；特殊值用 { __type: '...' } 标记，这里负责把它们渲染成对应的 JS 类型外观。
+type Marked =
+  | { __type: 'null' }
+  | { __type: 'undefined' }
+  | { __type: 'NaN' }
+  | { __type: 'Infinity' }
+  | { __type: '-Infinity' }
+  | { __type: 'depth' }
+  | { __type: 'circular' }
+  | { __type: 'function'; name: string }
+  | { __type: 'symbol'; desc: string }
+  | { __type: 'bigint'; value: string }
+  | { __type: 'date'; value: string }
+  | { __type: 'regexp'; value: string }
+  | { __type: 'error'; value: string }
+  | { __type: 'Map'; entries: [unknown, unknown][] }
+  | { __type: 'Set'; items: unknown[] }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
-// init.js 序列化 Map 为 { __type:'Map', entries:[...] }，Set 为 { __type:'Set', items:[...] }
-function mapSize(v: Record<string, unknown>): number {
-  const entries = v.entries
-  return Array.isArray(entries) ? entries.length : 0
+function isMarked(v: unknown): v is Marked {
+  return isPlainObject(v) && '__type' in v
 }
 
-function setSize(v: Record<string, unknown>): number {
-  const items = v.items
-  return Array.isArray(items) ? items.length : 0
+// 单值渲染（非可展开对象）
+function ValueText({ value }: { value: unknown }) {
+  if (value === null) return <span className="text-slate-500">null</span>
+  if (isMarked(value)) {
+    switch (value.__type) {
+      case 'undefined':
+        return <span className="text-slate-500">undefined</span>
+      case 'null':
+        return <span className="text-slate-500">null</span>
+      case 'NaN':
+        return <span className="text-sky-400">NaN</span>
+      case 'Infinity':
+        return <span className="text-sky-400">Infinity</span>
+      case '-Infinity':
+        return <span className="text-sky-400">-Infinity</span>
+      case 'circular':
+        return <span className="text-slate-400">[Circular]</span>
+      case 'depth':
+        return <span className="text-slate-400">[Depth Limit]</span>
+      case 'function':
+        return <span className="text-sky-300">ƒ {value.name}()</span>
+      case 'symbol':
+        return <span className="text-amber-300">{value.desc}</span>
+      case 'bigint':
+        return <span className="text-sky-400">{value.value}n</span>
+      case 'date':
+        return <span className="text-slate-300">{value.value}</span>
+      case 'regexp':
+        return <span className="text-violet-300">{value.value}</span>
+      case 'error':
+        return <span className="text-red-400">{value.value}</span>
+      default:
+        break
+    }
+  }
+  switch (typeof value) {
+    case 'string':
+      return <span className="text-emerald-400">"{value}"</span>
+    case 'number':
+      return <span className="text-sky-400">{String(value)}</span>
+    case 'boolean':
+      return <span className="text-violet-400">{String(value)}</span>
+    default:
+      return <span className="text-slate-200">{String(value)}</span>
+  }
 }
 
 interface InspectorProps {
@@ -24,66 +80,71 @@ interface InspectorProps {
   depth?: number
 }
 
-function ValueText({ value }: { value: unknown }) {
-  if (value === null) return <span className="text-slate-500">null</span>
-  switch (typeof value) {
-    case 'string':
-      return <span className="text-emerald-400">"{value}"</span>
-    case 'number':
-      return <span className="text-sky-400">{String(value)}</span>
-    case 'boolean':
-      return <span className="text-violet-400">{String(value)}</span>
-    case 'undefined':
-      return <span className="text-slate-500">undefined</span>
-    default:
-      return <span className="text-slate-200">{String(value)}</span>
-  }
+// 折叠时的摘要：{key1, key2, …} 或 Array(n)
+function objectPreview(value: Record<string, unknown>): string {
+  const keys = Object.keys(value).slice(0, 4)
+  const shown = keys.join(', ')
+  const rest = Object.keys(value).length > 4 ? ', …' : ''
+  return `{${shown}${rest}}`
+}
+
+function arrayPreview(value: unknown[]): string {
+  return `Array(${value.length})`
 }
 
 function Inspector({ value, name, depth = 0 }: InspectorProps) {
   const [open, setOpen] = useState(depth < 2)
 
   const isArray = Array.isArray(value)
-  const isObj = isPlainObject(value)
-  const isCollapsible = isArray || isObj
-  const isMap = isObj && value.__type === 'Map'
-  const isSet = isObj && value.__type === 'Set'
+  const isObj = isPlainObject(value) && !isMarked(value) && value.__type !== 'Map' && value.__type !== 'Set'
 
-  // 非可折叠值：直接输出 key: value
-  if (!isCollapsible || isMap || isSet) {
+  // 折叠开关按钮
+  const toggle = (
+    <button
+      type="button"
+      onClick={() => setOpen((o) => !o)}
+      className="cursor-pointer select-none text-left hover:text-sky-300 focus:outline-none"
+    >
+      <span className="mr-1 inline-block w-3 text-slate-500">{open ? '▾' : '▸'}</span>
+      {name != null && <span className="text-slate-400">{name}: </span>}
+      <span className="text-slate-200">
+        {isArray ? arrayPreview(value as unknown[]) : objectPreview(value as Record<string, unknown>)}
+      </span>
+    </button>
+  )
+
+  // Map / Set：按标记对象渲染（不展开细节，用简洁形式）
+  if (isMarked(value) && (value.__type === 'Map' || value.__type === 'Set')) {
     return (
-      <div className="pl-3 leading-5">
+      <div className={name != null ? 'pl-3 leading-5' : 'leading-5'}>
         {name != null && <span className="text-slate-400">{name}: </span>}
-        {isMap || isSet ? (
-          <span className="text-amber-300">
-            {isMap ? 'Map' : 'Set'}({isMap ? mapSize(value) : setSize(value)})
-          </span>
-        ) : (
-          <ValueText value={value} />
-        )}
+        <span className="text-amber-300">
+          {value.__type === 'Map'
+            ? `Map(${value.entries.length})`
+            : `Set(${value.items.length})`}
+        </span>
       </div>
     )
   }
 
+  // 普通单值（非对象/数组，或标记值）：直接输出
+  if (!isArray && !isObj) {
+    return (
+      <div className={name != null ? 'pl-3 leading-5' : 'leading-5'}>
+        {name != null && <span className="text-slate-400">{name}: </span>}
+        <ValueText value={value} />
+      </div>
+    )
+  }
+
+  // 数组 / 普通对象：可展开
   const entries: [string, unknown][] = isArray
     ? (value as unknown[]).map((v, i) => [String(i), v])
     : Object.entries(value as Record<string, unknown>)
 
-  const preview = isArray
-    ? `Array(${entries.length})`
-    : `{${entries.length > 0 ? '…' : ''}}`
-
   return (
     <div className="leading-5">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="cursor-pointer select-none text-left hover:text-sky-300 focus:outline-none"
-      >
-        <span className="mr-1 inline-block w-3 text-slate-500">{open ? '▾' : '▸'}</span>
-        {name != null && <span className="text-slate-400">{name}: </span>}
-        <span className="text-slate-200">{preview}</span>
-      </button>
+      {toggle}
       {open && (
         <div className="ml-3 border-l border-slate-700 pl-2">
           {entries.map(([k, v]) => (

@@ -18,42 +18,18 @@ const LEVEL_META: Record<LogLevel, { color: string; badge: string }> = {
   timeEnd: { color: 'text-sky-400', badge: '⏱' },
 }
 
-// 把一串序列化参数渲染成可读的一行（对象用 Inspector 展开）
+// 把一串序列化参数渲染成可读的一行（对象/数组用 Inspector 可折叠展开，单值也交给 Inspector 统一识别标记）
 function renderArgs(args: unknown[], key: string) {
   if (args.length === 1) {
-    const only = args[0]
-    if (typeof only === 'object' && only !== null) {
-      return <Inspector key={key} value={only} />
-    }
-    return <ValueCell key={key} value={only} />
+    return <Inspector key={key} value={args[0]} />
   }
   return (
-    <span key={key} className="flex flex-wrap gap-x-2">
-      {args.map((a, i) =>
-        typeof a === 'object' && a !== null ? (
-          <Inspector key={i} value={a} />
-        ) : (
-          <ValueCell key={i} value={a} />
-        )
-      )}
+    <span key={key} className="flex flex-wrap items-baseline gap-x-2">
+      {args.map((a, i) => (
+        <Inspector key={i} value={a} />
+      ))}
     </span>
   )
-}
-
-function ValueCell({ value }: { value: unknown }) {
-  if (value === null) return <span className="text-slate-500">null</span>
-  switch (typeof value) {
-    case 'string':
-      return <span className="text-emerald-400">"{value}"</span>
-    case 'number':
-      return <span className="text-sky-400">{String(value)}</span>
-    case 'boolean':
-      return <span className="text-violet-400">{String(value)}</span>
-    case 'undefined':
-      return <span className="text-slate-500">undefined</span>
-    default:
-      return <span className="text-slate-200">{String(value)}</span>
-  }
 }
 
 export default forwardRef<ConsoleHandle>(function Console(_props, ref) {
