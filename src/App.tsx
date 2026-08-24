@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback, type ChangeEvent } from 'react'
-import { Select, Button, Space, Tag, Divider } from 'antd'
-import { PlayCircleOutlined, FileAddOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons'
+import { Select, Button, Space, Divider } from 'antd'
+import { PlayCircleOutlined, FileAddOutlined, DownloadOutlined, UploadOutlined, GithubOutlined } from '@ant-design/icons'
 import Editor, { EditorHandle } from './components/Editor'
 import Console, { ConsoleHandle } from './components/Console'
 import { listTemplates, loadTemplate } from './hooks'
@@ -126,6 +126,15 @@ function App() {
     })
   }
 
+  // 当前文件名（展示在编辑器标题栏）
+  const currentLabel =
+    importedName ??
+    (currentPath === BLANK_TEMPLATE
+      ? '空白模板'
+      : currentPath === IMPORTED_TEMPLATE
+        ? '导入文件'
+        : currentPath.replace('../template/', ''))
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-slate-950 text-slate-100">
       {/* 顶部工具栏 */}
@@ -154,14 +163,15 @@ function App() {
           </div>
         </Space>
         <div className="ml-auto">
-          <Tag color="blue" style={{ marginInlineEnd: 0 }}>
-            {importedName ??
-              (currentPath === BLANK_TEMPLATE
-                ? '空白模板'
-                : currentPath === IMPORTED_TEMPLATE
-                  ? '导入文件'
-                  : currentPath.replace('../template/', ''))}
-          </Tag>
+          <a
+            href="https://github.com/bohecola/vanilla-js"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center text-slate-400 transition-colors hover:text-sky-300"
+            title="GitHub 仓库"
+          >
+            <GithubOutlined style={{ fontSize: 22 }} />
+          </a>
         </div>
       </header>
 
@@ -170,7 +180,7 @@ function App() {
         {/* 左：编辑器 */}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900 md:flex-[1.2]">
           <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
-            <span className="text-sm text-slate-400">Editor</span>
+            <span className="truncate text-sm text-slate-300">{currentLabel}</span>
             <Space size={8}>
               <Button size="small" icon={<DownloadOutlined />} onClick={handleDownload}>
                 下载
