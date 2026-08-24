@@ -56,3 +56,22 @@
     outline-offset: 2px;
   }
 }
+
+/* 全局页面级 reset：根容器填满视口、去掉 body 默认 margin 与白色背景，
+   避免四周露出白边，以及 h-screen + body margin 叠加产生竖直滚动条。 */
+@layer base {
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: #020617; /* slate-950 */
+    color: #e2e8f0;            /* slate-200 */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    height: 100%;
+  }
+}
