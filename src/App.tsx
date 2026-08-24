@@ -1,6 +1,6 @@
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useState, useCallback, type ChangeEvent } from 'react'
 import { Select, Button, Space, Tag, Divider } from 'antd'
-import { PlayCircleOutlined, FileAddOutlined, DownloadOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, FileAddOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons'
 import Editor, { EditorHandle } from './components/Editor'
 import Console, { ConsoleHandle } from './components/Console'
 import { listTemplates, loadTemplate } from './hooks'
@@ -14,10 +14,12 @@ function App() {
   const [currentPath, setCurrentPath] = useState<string>('../template/overrides/call.js')
   const [running, setRunning] = useState(false)
   const [runKey, setRunKey] = useState(0)
+  const [importedName, setImportedName] = useState<string | null>(null)
 
   const editorRef = useRef<EditorHandle>(null)
   const consoleRef = useRef<ConsoleHandle>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const options = [
     { value: BLANK_TEMPLATE, label: '空白模板' },
@@ -52,6 +54,7 @@ function App() {
   // 切换模板：更新选中项并清空 console（加载逻辑交给上面的 effect）
   function handleSelectChange(path: string) {
     setCurrentPath(path)
+    setImportedName(null)
     consoleRef.current?.clear()
   }
 
@@ -60,13 +63,34 @@ function App() {
     handleSelectChange(BLANK_TEMPLATE)
   }
 
+  // 导入：打开本地文件选择，读取 .js 内容到编辑器
+  function handleImport() {
+    fileInputRef.current?.click()
+  }
+
+  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    file
+      .text()
+      .then((text) => {
+        editorRef.current?.setValue(text)
+        setImportedName(file.name)
+        consoleRef.current?.clear()
+      })
+      .catch((err) => console.error('读取文件失败', err))
+    // 重置 input，允许再次导入同一文件
+    e.target.value = ''
+  }
+
   // 下载：把编辑器当前代码导出为 .js 文件
   function handleDownload() {
     const code = editorRef.current?.getValue() ?? ''
     const filename =
-      currentPath === BLANK_TEMPLATE
+      importedName ??
+      (currentPath === BLANK_TEMPLATE
         ? 'code.js'
-        : (currentPath.split('/').pop() ?? 'code.js')
+        : (currentPath.split('/').pop() ?? 'code.js'))
 
     const blob = new Blob([code], { type: 'text/javascript;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -107,6 +131,9 @@ function App() {
           <Button icon={<FileAddOutlined />} onClick={handleNewFile}>
             新建
           </Button>
+          <Button icon={<UploadOutlined />} onClick={handleImport}>
+            导入
+          </Button>
           <Select
             value={currentPath}
             style={{ width: 300 }}
@@ -129,7 +156,8 @@ function App() {
         </Space>
         <div className="ml-auto">
           <Tag color="blue" style={{ marginInlineEnd: 0 }}>
-            {currentPath === BLANK_TEMPLATE ? '空白模板' : currentPath.replace('../template/', '')}
+            {importedName ??
+              (currentPath === BLANK_TEMPLATE ? '空白模板' : currentPath.replace('../template/', ''))}
           </Tag>
         </div>
       </header>
@@ -164,6 +192,15 @@ function App() {
         title="runner"
         className="hidden"
         sandbox="allow-scripts"
+      />
+
+      {/* 隐藏的文件选择框，用于「导入」按钮读取本地 .js 文件 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".js,.mjs,.ts,.jsx,.txt"
+        className="hidden"
+        onChange={handleFileChange}
       />
     </div>
   )
