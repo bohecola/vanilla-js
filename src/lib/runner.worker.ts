@@ -1,10 +1,14 @@
 // 用户代码的运行环境：Web Worker。
 // 在独立线程里执行用户 JS，主线程永不卡顿；
 // 「停止」= worker.terminate()，即使 while(true) 死循环也能强制中断。
+// 用户代码被包进 async 函数执行，所以顶层 await 可用（见文件末尾的 onmessage）。
 
 /// <reference lib="webworker" />
 // 将全局 self 断言为 Worker 作用域（避免与 DOM lib 的 self 声明冲突）
 const workerScope = self as unknown as DedicatedWorkerGlobalScope
+
+// TS 代码在主线程用 esbuild 编译好再发进来（见 src/lib/compile.ts），
+// 这里收到的始终是可直接 eval 的 JS。
 
 // 特殊值标记：父页面据此渲染成对应类型，而不是当成普通字符串
 function marker(type: string) {
@@ -17,7 +21,8 @@ function stringify(value: unknown, seen: Set<unknown>, depth: number): unknown {
   if (value === null) return marker('null')
 
   const t = typeof value
-  if (t === 'function') return { __type: 'function', name: (value as Function).name || 'anonymous' }
+  if (t === 'function')
+    return { __type: 'function', name: (value as { name?: string }).name || 'anonymous' }
   if (t === 'symbol') return { __type: 'symbol', desc: (value as symbol).toString() }
   if (t === 'bigint') return { __type: 'bigint', value: (value as bigint).toString() }
   if (t === 'undefined') return marker('undefined')
@@ -79,11 +84,12 @@ function send(type: string, args: unknown[]) {
   })
 }
 
-function overrideConsole(type: 'log' | 'info' | 'debug' | 'warn' | 'error' | 'table' | 'time' | 'timeEnd') {
-  const origin = console[type]
+type ConsoleMethod = 'log' | 'info' | 'debug' | 'warn' | 'error' | 'table' | 'time' | 'timeEnd'
+
+function overrideConsole(type: ConsoleMethod) {
+  const origin = console[type] as ((...args: unknown[]) => void) | undefined
   if (typeof origin !== 'function') return
-  ;(console as any)[type] = function () {
-    const args = Array.prototype.slice.call(arguments)
+  const patched = (...args: unknown[]) => {
     try {
       send(type, args)
     } catch {
@@ -97,6 +103,7 @@ function overrideConsole(type: 'log' | 'info' | 'debug' | 'warn' | 'error' | 'ta
     }
     return origin.apply(console, args)
   }
+  ;(console as unknown as Record<ConsoleMethod, unknown>)[type] = patched
 }
 
 overrideConsole('log')
@@ -108,35 +115,108 @@ overrideConsole('table')
 overrideConsole('time')
 overrideConsole('timeEnd')
 
-// 记录本次运行是否排过定时器（setTimeout/setInterval）。
-// 只要排过定时器，就视为「长期运行」（间隔/异步任务），不再发送 done，
-// 从而让父页面保持「停止」按钮可用，用户可以随时终止。
-let scheduledTimer = false
+// —— 运行结束的判定 ——
+// 「结束」= 用户代码主体（含顶层 await）已 settle，且没有未完成的异步工作：
+// 待触发的 setTimeout 和仍在跑的 setInterval。归零时发 done，父页面复位「停止」按钮。
+// 之前的做法是「只要排过定时器就永不发 done」，导致 setTimeout(fn, 100) 这类代码
+// 跑完之后「停止」按钮一直亮着。
+const pendingTimeouts = new Set<number>()
+const activeIntervals = new Set<number>()
+let bodySettled = false
+let doneSent = false
+
+function maybeDone() {
+  if (doneSent || !bodySettled) return
+  if (pendingTimeouts.size > 0 || activeIntervals.size > 0) return
+  doneSent = true
+  workerScope.postMessage({ from: 'worker', type: 'done', timestamp: Date.now() })
+}
+
+type TimerFn = (...args: unknown[]) => void
 const origSetTimeout = workerScope.setTimeout.bind(workerScope)
 const origSetInterval = workerScope.setInterval.bind(workerScope)
-workerScope.setTimeout = ((fn: any, delay?: number, ...args: any[]) => {
-  scheduledTimer = true
-  return origSetTimeout(fn, delay, ...args)
+const origClearTimeout = workerScope.clearTimeout.bind(workerScope)
+const origClearInterval = workerScope.clearInterval.bind(workerScope)
+
+workerScope.setTimeout = ((fn: TimerFn, delay?: number, ...args: unknown[]) => {
+  // 字符串形式的回调不常见，直接交给原生实现，不纳入统计
+  if (typeof fn !== 'function') return origSetTimeout(fn as never, delay)
+  let id = 0
+  id = origSetTimeout(
+    (...cbArgs: unknown[]) => {
+      try {
+        fn(...cbArgs)
+      } finally {
+        // 先执行回调再销账：回调里又排定时器时，计数不会中途归零而误报结束
+        pendingTimeouts.delete(id)
+        maybeDone()
+      }
+    },
+    delay,
+    ...args
+  )
+  pendingTimeouts.add(id)
+  return id
 }) as typeof setTimeout
-workerScope.setInterval = ((fn: any, delay?: number, ...args: any[]) => {
-  scheduledTimer = true
-  return origSetInterval(fn, delay, ...args)
+
+workerScope.setInterval = ((fn: TimerFn, delay?: number, ...args: unknown[]) => {
+  if (typeof fn !== 'function') return origSetInterval(fn as never, delay)
+  const id = origSetInterval(fn, delay, ...args)
+  activeIntervals.add(id)
+  return id
 }) as typeof setInterval
 
-// 收到运行指令后，直接在当前 worker 作用域执行用户代码。
-// 用间接 eval 避免污染本文件作用域；用户代码抛错则捕获并转发。
-// - 纯同步代码：eval 返回且未排定时器 → 发送 done，父页面隐藏「停止」。
-// - 排了定时器：虽 eval 返回，但不发 done，保持「停止」可点。
-// - while(true) 死循环：eval 永不返回，不发 done，保持「停止」可点。
+workerScope.clearTimeout = ((id?: number) => {
+  origClearTimeout(id)
+  if (typeof id === 'number' && pendingTimeouts.delete(id)) maybeDone()
+}) as typeof clearTimeout
+
+workerScope.clearInterval = ((id?: number) => {
+  origClearInterval(id)
+  // 定时器自己 clearInterval 停掉自己时，这里就是本次运行的终点
+  if (typeof id === 'number' && activeIntervals.delete(id)) maybeDone()
+}) as typeof clearInterval
+
+// 定时器回调里抛的错、以及没人 catch 的 Promise 拒绝，默认不会经过下方的 try/catch，
+// 在控制台里会完全看不见 —— 统一转发出去。
+workerScope.addEventListener('error', (ev: ErrorEvent) => {
+  ev.preventDefault()
+  send('error', [ev.error ?? ev.message])
+})
+workerScope.addEventListener('unhandledrejection', (ev: PromiseRejectionEvent) => {
+  ev.preventDefault()
+  send('error', [ev.reason])
+})
+
+// 收到运行指令后执行用户代码（TS 已在主线程编译成 JS）。
+// 代码被包进一个 async 箭头函数：这样顶层 await 可以直接用，
+// 并且 `(async () => {` 紧贴用户代码第一行（中间不加换行），异常栈里的行号与编辑器一致。
+// 用间接 eval 避免污染本文件作用域；语法错误在 eval 阶段就会抛出。
+// - 同步或已 await 完的代码：主体 settle 且没有挂着的定时器 → 发 done，父页面隐藏「停止」。
+// - 还有 setInterval / 未触发的 setTimeout：等它们真正结束后才发 done。
+// - while(true) 死循环：fn() 永不返回，不发 done，「停止」保持可点（terminate 兜底）。
 workerScope.onmessage = (e: MessageEvent) => {
   const code = typeof e.data?.code === 'string' ? e.data.code : ''
-  scheduledTimer = false
+  pendingTimeouts.clear()
+  activeIntervals.clear()
+  bodySettled = false
+  doneSent = false
+
+  let body: Promise<unknown>
   try {
-    ;(0, eval)(code)
+    const fn = (0, eval)('(async () => {' + code + '\n})') as () => Promise<unknown>
+    body = fn()
   } catch (err) {
     send('error', [err])
+    bodySettled = true
+    maybeDone()
+    return
   }
-  if (!scheduledTimer) {
-    workerScope.postMessage({ from: 'worker', type: 'done', timestamp: Date.now() })
-  }
+
+  body
+    .catch((err) => send('error', [err]))
+    .finally(() => {
+      bodySettled = true
+      maybeDone()
+    })
 }

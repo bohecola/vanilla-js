@@ -1,10 +1,11 @@
 import { useRef, useEffect, useState, useCallback, type ChangeEvent } from 'react'
-import { Select, Button, Space, Divider, Tag, Dropdown } from 'antd'
+import { Select, Button, Space, Divider, Tag, Dropdown, Segmented } from 'antd'
 import { PlayCircleOutlined, StopOutlined, FileAddOutlined, DownloadOutlined, UploadOutlined, GithubOutlined, SunOutlined, MoonOutlined, DesktopOutlined } from '@ant-design/icons'
 import Editor, { EditorHandle } from './components/Editor'
 import Console, { ConsoleHandle } from './components/Console'
 import { listTemplates, loadTemplate } from './hooks'
 import { codeRunner } from './lib/runner'
+import { warmupCompiler } from './lib/compile'
 import { useTheme, type ThemeMode } from './theme/index.tsx'
 
 // 空白模板：下拉框中的特殊选项，选中后清空编辑器，供自由编写测试代码
@@ -12,12 +13,32 @@ const BLANK_TEMPLATE = '__blank__'
 // 导入文件：选中本地文件后进入的临时状态，展示为「导入：文件名」
 const IMPORTED_TEMPLATE = '__imported__'
 
+type Language = 'javascript' | 'typescript'
+
+// 按文件后缀猜语言（导入 .ts 文件时自动切到 TS，否则代码不会经过 TS 编译）
+function languageFromFilename(name: string): Language {
+  return /\.(ts|tsx|mts|cts)$/i.test(name) ? 'typescript' : 'javascript'
+}
+
+// 让下载的文件后缀与当前语言一致：TS 代码存成 .js 打开就是坏的
+function withLanguageExt(filename: string, language: Language): string {
+  const ext = language === 'typescript' ? 'ts' : 'js'
+  return filename.replace(/\.(js|mjs|cjs|jsx|ts|tsx|mts|cts)$/i, `.${ext}`)
+}
+
 function App() {
   const templates = listTemplates()
   const [currentPath, setCurrentPath] = useState<string>('../template/overrides/call.js')
   const [running, setRunning] = useState(false)
   const [importedName, setImportedName] = useState<string | null>(null)
+  // 语言选择：影响编辑器补全/高亮，以及运行时是否先做 TS→JS 编译
+  const [language, setLanguage] = useState<Language>('javascript')
   const { mode, setMode } = useTheme()
+
+  // 切到 TS 时提前初始化 esbuild wasm（~10MB），别等到点「运行」才干等
+  useEffect(() => {
+    if (language === 'typescript') warmupCompiler()
+  }, [language])
 
   // 组件卸载时释放 worker 资源
   useEffect(() => {
@@ -88,6 +109,7 @@ function App() {
       .then((text) => {
         editorRef.current?.setValue(text)
         setImportedName(file.name)
+        setLanguage(languageFromFilename(file.name))
         setCurrentPath(IMPORTED_TEMPLATE)
         consoleRef.current?.clear()
       })
@@ -96,16 +118,19 @@ function App() {
     e.target.value = ''
   }
 
-  // 下载：把编辑器当前代码导出为 .js 文件
+  // 下载：把编辑器当前代码导出为对应语言后缀的文件
   function handleDownload() {
     const code = editorRef.current?.getValue() ?? ''
-    const filename =
+    const ext = language === 'typescript' ? 'ts' : 'js'
+    const filename = withLanguageExt(
       importedName ??
-      (currentPath === BLANK_TEMPLATE
-        ? 'code.js'
-        : (currentPath.split('/').pop() ?? 'code.js'))
+        (currentPath === BLANK_TEMPLATE
+          ? `code.${ext}`
+          : (currentPath.split('/').pop() ?? `code.${ext}`)),
+      language
+    )
 
-    const blob = new Blob([code], { type: 'text/javascript;charset=utf-8' })
+    const blob = new Blob([code], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -114,11 +139,12 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
-  // 运行：在 Web Worker 里执行用户代码，主线程不卡，死循环也能用「停止」强制终止
+  // 运行：在 Web Worker 里执行用户代码，主线程不卡，死循环也能用「停止」强制终止。
+  // TS 代码会先在主线程用 esbuild 转成 JS（首次需要等 wasm 就绪）。
   function runCode() {
     const code = editorRef.current?.getValue() ?? ''
     consoleRef.current?.clear()
-    codeRunner.run(code)
+    void codeRunner.run(code, language)
     setRunning(true)
   }
 
@@ -172,6 +198,15 @@ function App() {
           </div>
         </Space>
         <div className="ml-auto flex items-center gap-2">
+          <Segmented
+            value={language}
+            onChange={(value) => setLanguage(value as Language)}
+            options={[
+              { value: 'javascript', label: 'JS' },
+              { value: 'typescript', label: 'TS' },
+            ]}
+            size="small"
+          />
           <Dropdown
             menu={{
               items: [
@@ -249,7 +284,7 @@ function App() {
             </Space>
           </div>
           <div className="min-h-0 flex-1">
-            <Editor ref={editorRef} language="javascript" />
+            <Editor ref={editorRef} language={language} />
           </div>
         </section>
 
@@ -264,11 +299,12 @@ function App() {
         </section>
       </main>
 
-      {/* 隐藏的文件选择框，用于「导入」按钮读取本地 .js 文件 */}
+      {/* 隐藏的文件选择框，用于「导入」按钮读取本地代码文件。
+          不收 .jsx/.tsx：运行环境是没有 DOM 的 Web Worker，JSX 编译出来也没法渲染 */}
       <input
         ref={fileInputRef}
         type="file"
-        accept=".js,.mjs,.ts,.jsx,.txt"
+        accept=".js,.mjs,.cjs,.ts,.mts,.txt"
         className="hidden"
         onChange={handleFileChange}
       />
