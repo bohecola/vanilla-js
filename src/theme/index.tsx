@@ -15,7 +15,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 // 注意：index.html 里有一段首帧前的内联脚本读同一个键、用同一个默认值（dark）
 // 提前写好 <html data-theme>，避免主题闪变。改这里时记得同步那段脚本。
-const STORAGE_KEY = 'js-playground-theme'
+const STORAGE_KEY = 'code-playground-theme'
 
 function getInitialMode(): ThemeMode {
   try {

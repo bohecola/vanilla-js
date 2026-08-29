@@ -176,7 +176,7 @@ function App() {
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--border)] bg-[var(--panel-bg)] px-4 py-3">
         <div className="flex items-center gap-2 text-base font-semibold">
           <span className="inline-block h-3 w-3 rounded-full bg-[var(--accent-logo)]" />
-          JS Playground
+          Code Playground
         </div>
         <Divider orientation="vertical" className="border-[var(--border-strong)]" />
         <Space size={8}>
@@ -238,7 +238,7 @@ function App() {
             </Button>
           </Dropdown>
           <a
-            href="https://github.com/bohecola/js-playground"
+            href="https://github.com/bohecola/code-playground"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center text-[var(--text-muted)] transition-colors hover:text-[var(--accent-number)]"

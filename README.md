@@ -1,8 +1,8 @@
-# js-playground
+# code-playground
 
-JavaScript 代码在线预览
+JS / TS 代码在线预览（支持 JavaScript 与 TypeScript）
 
-基于：React + TS + Iframe + Vite + Monaco
+基于：React + TS + Web Worker + Vite + Monaco
 
 ## 安装依赖
 
