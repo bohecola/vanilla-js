@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!--
+    文本 I-beam 光标，按 Windows 32px 指针尺寸绘制（热点 16 16 = 竖线中心）。
+    刻意画成「深色实心 + 白色描边」的 ARGB 图：不依赖系统 legacy 光标的反色合成，
+    因此在白底和深色选区上都看得见。先描边、再实心覆盖内半边。
+  -->
+  <path d="M12 5H20V7H17V25H20V27H12V25H15V7H12Z" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linejoin="round" />
+  <path d="M12 5H20V7H17V25H20V27H12V25H15V7H12Z" fill="#111827" />
+</svg>
