@@ -29,48 +29,48 @@ function isMarked(v: unknown): v is Marked {
 
 // 单值渲染（非可展开对象）
 function ValueText({ value }: { value: unknown }) {
-  if (value === null) return <span className="text-slate-500">null</span>
+  if (value === null) return <span className="text-[var(--text-faint)]">null</span>
   if (isMarked(value)) {
     switch (value.__type) {
       case 'undefined':
-        return <span className="text-slate-500">undefined</span>
+        return <span className="text-[var(--text-faint)]">undefined</span>
       case 'null':
-        return <span className="text-slate-500">null</span>
+        return <span className="text-[var(--text-faint)]">null</span>
       case 'NaN':
-        return <span className="text-sky-400">NaN</span>
+        return <span className="text-[var(--accent-number)]">NaN</span>
       case 'Infinity':
-        return <span className="text-sky-400">Infinity</span>
+        return <span className="text-[var(--accent-number)]">Infinity</span>
       case '-Infinity':
-        return <span className="text-sky-400">-Infinity</span>
+        return <span className="text-[var(--accent-number)]">-Infinity</span>
       case 'circular':
-        return <span className="text-slate-400">[Circular]</span>
+        return <span className="text-[var(--text-muted)]">[Circular]</span>
       case 'depth':
-        return <span className="text-slate-400">[Depth Limit]</span>
+        return <span className="text-[var(--text-muted)]">[Depth Limit]</span>
       case 'function':
-        return <span className="text-sky-300">ƒ {value.name}()</span>
+        return <span className="text-[var(--accent-number-bright)]">ƒ {value.name}()</span>
       case 'symbol':
-        return <span className="text-amber-300">{value.desc}</span>
+        return <span className="text-[var(--accent-symbol)]">{value.desc}</span>
       case 'bigint':
-        return <span className="text-sky-400">{value.value}n</span>
+        return <span className="text-[var(--accent-number)]">{value.value}n</span>
       case 'date':
-        return <span className="text-slate-300">{value.value}</span>
+        return <span className="text-[var(--text-body)]">{value.value}</span>
       case 'regexp':
-        return <span className="text-violet-300">{value.value}</span>
+        return <span className="text-[var(--accent-keyword)]">{value.value}</span>
       case 'error':
-        return <span className="text-red-400">{value.value}</span>
+        return <span className="text-[var(--accent-error)]">{value.value}</span>
       default:
         break
     }
   }
   switch (typeof value) {
     case 'string':
-      return <span className="text-emerald-400">"{value}"</span>
+      return <span className="text-[var(--accent-string)]">"{value}"</span>
     case 'number':
-      return <span className="text-sky-400">{String(value)}</span>
+      return <span className="text-[var(--accent-number)]">{String(value)}</span>
     case 'boolean':
-      return <span className="text-violet-400">{String(value)}</span>
+      return <span className="text-[var(--accent-bool)]">{String(value)}</span>
     default:
-      return <span className="text-slate-200">{String(value)}</span>
+      return <span className="text-[var(--text-primary)]">{String(value)}</span>
   }
 }
 
@@ -103,11 +103,11 @@ function Inspector({ value, name, depth = 0 }: InspectorProps) {
     <button
       type="button"
       onClick={() => setOpen((o) => !o)}
-      className="cursor-pointer select-none text-left text-slate-500 hover:text-sky-300 focus:outline-none"
+      className="cursor-pointer select-none text-left text-[var(--text-faint)] hover:text-[var(--accent-number)] focus:outline-none"
     >
-      <span className="mr-1 inline-block w-3 text-slate-600">{open ? '▾' : '▸'}</span>
-      {name != null && <span className="text-slate-500">{name}: </span>}
-      <span className="text-slate-500">
+      <span className="mr-1 inline-block w-3 text-[var(--text-faint)]">{open ? '▾' : '▸'}</span>
+      {name != null && <span className="text-[var(--text-faint)]">{name}: </span>}
+      <span className="text-[var(--text-faint)]">
         {isArray ? arrayPreview(value as unknown[]) : objectPreview(value as Record<string, unknown>)}
       </span>
     </button>
@@ -117,8 +117,8 @@ function Inspector({ value, name, depth = 0 }: InspectorProps) {
   if (isMarked(value) && (value.__type === 'Map' || value.__type === 'Set')) {
     return (
       <div className={name != null ? 'pl-3 leading-5' : 'leading-5'}>
-        {name != null && <span className="text-slate-500">{name}: </span>}
-        <span className="text-amber-300">
+        {name != null && <span className="text-[var(--text-faint)]">{name}: </span>}
+        <span className="text-[var(--accent-symbol)]">
           {value.__type === 'Map'
             ? `Map(${value.entries.length})`
             : `Set(${value.items.length})`}
@@ -131,7 +131,7 @@ function Inspector({ value, name, depth = 0 }: InspectorProps) {
   if (!isArray && !isObj) {
     return (
       <div className={name != null ? 'pl-3 leading-5' : 'leading-5'}>
-        {name != null && <span className="text-slate-500">{name}: </span>}
+        {name != null && <span className="text-[var(--text-faint)]">{name}: </span>}
         <ValueText value={value} />
       </div>
     )
@@ -148,7 +148,7 @@ function Inspector({ value, name, depth = 0 }: InspectorProps) {
       {open && (
         <div className="relative">
           {/* 缩进引导竖线：与上级箭头的水平位置对齐 */}
-          <span className="absolute inset-y-0 left-[3px] w-px bg-slate-700" />
+          <span className="absolute inset-y-0 left-[3px] w-px bg-[var(--border-strong)]" />
           <div className="ml-4">
             {entries.map(([k, v]) => (
               <Inspector key={k} value={v} name={k} depth={depth + 1} />

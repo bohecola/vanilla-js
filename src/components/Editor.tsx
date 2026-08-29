@@ -2,6 +2,7 @@ import { useRef, useEffect, useImperativeHandle, forwardRef, useMemo } from 'rea
 import { monaco } from '@/monaco/setup'
 import type { editor as MonacoEditorType } from 'monaco-editor'
 import { debounce } from 'lodash-es'
+import { useTheme } from '@/theme/index'
 
 interface EditorProps {
   language: string
@@ -15,6 +16,7 @@ export interface EditorHandle {
 const Editor = forwardRef<EditorHandle, EditorProps>(({ language }, ref) => {
   const editorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const { effective } = useTheme()
 
   // 用 useMemo 保持同一个 debounce 实例，避免每次渲染新建导致 effect 重跑、
   // Monaco 实例被反复 dispose
@@ -27,7 +29,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ language }, ref) => {
     editorRef.current = monaco.editor.create(container, {
       value: '',
       language,
-      theme: 'vs-dark',
+      theme: effective === 'dark' ? 'vs-dark' : 'playground-light',
       automaticLayout: true,
     })
 
@@ -40,6 +42,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ language }, ref) => {
       editorRef.current = null
     }
   }, [language, handleResize])
+
+  // 主题切换时仅更新 Monaco 主题，避免重建编辑器丢失用户代码
+  useEffect(() => {
+    monaco.editor.setTheme(effective === 'dark' ? 'vs-dark' : 'playground-light')
+  }, [effective])
 
   useImperativeHandle(ref, () => ({
     setValue: (value: string) => {

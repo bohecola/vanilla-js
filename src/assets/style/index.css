@@ -57,16 +57,88 @@
   }
 }
 
-/* 全局页面级 reset：根容器填满视口、去掉 body 默认 margin 与白色背景，
-   避免四周露出白边，以及 h-screen + body margin 叠加产生竖直滚动条。 */
+/* 主题语义变量：通过 <html data-theme="dark|light"> 切换。
+   所有组件用 bg-[var(--...)] 这类工具类引用，避免在 JS 里到处硬编码颜色。
+
+   color-scheme 必须严格跟随主题：Chromium 是按鼠标所在元素 color-scheme 的
+   计算值来挑 I 形光标位图的（dark 用白色 I-beam），一旦浅色模式下残留 dark，
+   白底上的系统文本光标就会看不见。所以这里用低优先级的 html 作基准选择器，
+   让下面的 [data-theme] 属性选择器（0,1,0）稳定压过它（0,0,1），
+   不依赖书写顺序。 */
+html {
+  color-scheme: light dark;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* 页面 / 面板背景 */
+  --app-bg: #020617;   /* slate-950 */
+  --panel-bg: #0f172a; /* slate-900 */
+  --panel-hover: #1e293b; /* slate-800 */
+
+  /* 边框 / 分割线 */
+  --border: #1e293b;   /* slate-800 */
+  --border-strong: #334155; /* slate-700 */
+
+  /* 文字 */
+  --text-primary: #e2e8f0; /* slate-200 */
+  --text-body: #cbd5e1;    /* slate-300 */
+  --text-muted: #94a3b8;   /* slate-400 */
+  --text-faint: #64748b;   /* slate-500 */
+
+  /* 徽标底色 */
+  --badge-bg: #334155;  /* slate-700 */
+
+  /* 值类型强调色（暗色下偏亮） */
+  --accent-number: #38bdf8;   /* sky-400 */
+  --accent-number-bright: #7dd3fc; /* sky-300 */
+  --accent-string: #34d399;   /* emerald-400 */
+  --accent-bool: #a78bfa;     /* violet-400 */
+  --accent-keyword: #c084fc;  /* violet-300 */
+  --accent-symbol: #fcd34d;   /* amber-300 */
+  --accent-error: #f87171;    /* red-400 */
+  --accent-logo: #38bdf8;     /* sky-400 */
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --app-bg: #f1f5f9;     /* slate-100 */
+  --panel-bg: #ffffff;   /* white */
+  --panel-hover: #e2e8f0; /* slate-200 */
+
+  --border: #cbd5e1;     /* slate-300 */
+  --border-strong: #94a3b8; /* slate-400 */
+
+  --text-primary: #0f172a; /* slate-900 */
+  --text-body: #1e293b;    /* slate-800 */
+  --text-muted: #475569;   /* slate-600 */
+  --text-faint: #64748b;   /* slate-500 */
+
+  --badge-bg: #e2e8f0;   /* slate-200 */
+
+  /* 值类型强调色（亮色下加深，保证对比度） */
+  --accent-number: #0284c7;   /* sky-600 */
+  --accent-number-bright: #0369a1; /* sky-700 */
+  --accent-string: #059669;   /* emerald-600 */
+  --accent-bool: #7c3aed;     /* violet-600 */
+  --accent-keyword: #6d28d9;  /* violet-700 */
+  --accent-symbol: #d97706;   /* amber-600 */
+  --accent-error: #dc2626;    /* red-600 */
+  --accent-logo: #0284c7;     /* sky-600 */
+}
+
+/* 全局页面级 reset：根容器填满视口、去掉 body 默认 margin 与白色背景 */
 @layer base {
   html,
   body {
     height: 100%;
     margin: 0;
     padding: 0;
-    background-color: #020617; /* slate-950 */
-    color: #e2e8f0;            /* slate-200 */
+    background-color: var(--app-bg);
+    color: var(--text-primary);
+    transition: background-color 0.2s ease, color 0.2s ease;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -74,4 +146,28 @@
   #root {
     height: 100%;
   }
+}
+
+/*
+  浅色主题下的鼠标文本光标（I 形指针）。
+
+  Windows「Windows 默认」方案里的文本光标是 legacy 单色光标（AND/XOR mask），
+  靠对背景取反来显示；Chromium 在部分 AMD 显卡上合成这类光标时会丢掉取反语义、
+  直接画成纯白（crbug 40239916），于是深色编辑器里看得见、白底上就消失了。
+  这跟页面的 color-scheme 无关，CSS 改不动系统光标的颜色，只能自带一张带白色描边的
+  ARGB 光标图顶掉它。仅在浅色主题的文本区域生效；深色主题下那只白光标本就可见，
+  保持系统原生行为。
+
+  作用域刻意收窄到「文本区域」：Monaco 的 .monaco-mouse-cursor-text（编辑区文本层）
+  与真正的文本输入框。行号槽、滚动条、minimap 等不在其中，保留 Monaco 自己的箭头光标。
+  若系统指针方案换成非 legacy 的（设置 → 辅助功能 → 鼠标指针 → 黑色/自定义颜色），
+  整段可以直接删掉。
+*/
+[data-theme='light'] .monaco-mouse-cursor-text,
+[data-theme='light'] textarea,
+[data-theme='light']
+  input:is(:not([type]), [type='text'], [type='search'], [type='email'], [type='url'], [type='tel'], [type='password'], [type='number']) {
+  cursor:
+    url('/cursor-ibeam.svg') 16 16,
+    text;
 }

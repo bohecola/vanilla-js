@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react'
+﻿import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react'
 import type { ConsoleMessage, LogLevel } from '../types'
 import Inspector from './Inspector'
 
@@ -8,14 +8,14 @@ export interface ConsoleHandle {
 
 // 各日志级别的配色与图标
 const LEVEL_META: Record<LogLevel, { color: string; badge: string }> = {
-  log: { color: 'text-slate-300', badge: '' },
-  info: { color: 'text-sky-400', badge: 'i' },
-  debug: { color: 'text-slate-500', badge: 'dbg' },
-  warn: { color: 'text-amber-400', badge: 'warn' },
-  error: { color: 'text-red-400', badge: 'err' },
-  table: { color: 'text-emerald-400', badge: 'table' },
-  time: { color: 'text-sky-400', badge: '⏱' },
-  timeEnd: { color: 'text-sky-400', badge: '⏱' },
+  log: { color: 'text-[var(--text-body)]', badge: '' },
+  info: { color: 'text-[var(--accent-number)]', badge: 'i' },
+  debug: { color: 'text-[var(--text-faint)]', badge: 'dbg' },
+  warn: { color: 'text-[var(--accent-symbol)]', badge: 'warn' },
+  error: { color: 'text-[var(--accent-error)]', badge: 'err' },
+  table: { color: 'text-[var(--accent-string)]', badge: 'table' },
+  time: { color: 'text-[var(--accent-number)]', badge: '⏱' },
+  timeEnd: { color: 'text-[var(--accent-number)]', badge: '⏱' },
 }
 
 // 把一串序列化参数渲染成可读的一行（对象/数组用 Inspector 可折叠展开，单值也交给 Inspector 统一识别标记）
@@ -37,14 +37,19 @@ export default forwardRef<ConsoleHandle>(function Console(_props, ref) {
   const idRef = useRef(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // 校验消息来源：必须来自页面内部的 iframe，且 from 标记正确
+  // 校验消息来源：接受本页内部 iframe 或 Web Worker 转发的 console 输出
   function isTrustedMessage(e: MessageEvent) {
-    if (e.source == null) return false
-    // 只接受来自本页面 window 内部的 iframe 消息
-    // source 必须能对应到本页面的某个 iframe
-    const frames = window.frames
-    for (let i = 0; i < frames.length; i++) {
-      if (frames[i] === e.source) return e.data?.from === 'iframe'
+    const from = e.data?.from
+    if (from === 'worker') {
+      // Worker 消息：source 是 Worker 实例，且必须携带结构化 args
+      return Array.isArray(e.data.args) && typeof e.data.type === 'string'
+    }
+    if (from === 'iframe' && e.source != null) {
+      // 兼容旧的 iframe 运行方式（source 须能对应到本页某个 iframe）
+      const frames = window.frames
+      for (let i = 0; i < frames.length; i++) {
+        if (frames[i] === e.source) return true
+      }
     }
     return false
   }
@@ -81,9 +86,9 @@ export default forwardRef<ConsoleHandle>(function Console(_props, ref) {
   }))
 
   return (
-    <div ref={containerRef} className="h-full overflow-auto bg-slate-900 px-2 py-1 font-mono text-[12px] leading-5">
+    <div ref={containerRef} className="h-full overflow-auto bg-[var(--panel-bg)] px-2 py-1 font-mono text-[12px] leading-5">
       {logs.length === 0 ? (
-        <div className="mt-1 text-slate-600">// console 输出会显示在这里</div>
+        <div className="mt-1 text-[var(--text-faint)]">// console 输出会显示在这里</div>
       ) : (
         logs.map((log) => {
           const meta = LEVEL_META[log.type]
@@ -94,10 +99,10 @@ export default forwardRef<ConsoleHandle>(function Console(_props, ref) {
             second: '2-digit',
           })
           return (
-            <div key={log.id} className={`flex gap-2 py-0.5 ${meta.color} border-b border-slate-800/60 last:border-0`}>
-              <span className="shrink-0 text-slate-600">{time}</span>
+            <div key={log.id} className={`flex gap-2 py-0.5 ${meta.color} border-b border-[var(--border)]/60 last:border-0`}>
+              <span className="shrink-0 text-[var(--text-faint)]">{time}</span>
               {meta.badge && (
-                <span className="shrink-0 rounded bg-slate-700 px-1 text-[10px] uppercase">{meta.badge}</span>
+                <span className="shrink-0 rounded bg-[var(--badge-bg)] px-1 text-[10px] uppercase">{meta.badge}</span>
               )}
               <div className="min-w-0 flex-1 break-words">{renderArgs(log.args, String(log.id))}</div>
             </div>

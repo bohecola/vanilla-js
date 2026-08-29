@@ -1,10 +1,11 @@
 import { useRef, useEffect, useState, useCallback, type ChangeEvent } from 'react'
-import { Select, Button, Space, Divider, Tag } from 'antd'
-import { PlayCircleOutlined, FileAddOutlined, DownloadOutlined, UploadOutlined, GithubOutlined } from '@ant-design/icons'
+import { Select, Button, Space, Divider, Tag, Dropdown } from 'antd'
+import { PlayCircleOutlined, StopOutlined, FileAddOutlined, DownloadOutlined, UploadOutlined, GithubOutlined, SunOutlined, MoonOutlined, DesktopOutlined } from '@ant-design/icons'
 import Editor, { EditorHandle } from './components/Editor'
 import Console, { ConsoleHandle } from './components/Console'
 import { listTemplates, loadTemplate } from './hooks'
-import { buildRunnerDoc } from './lib/runner'
+import { codeRunner } from './lib/runner'
+import { useTheme, type ThemeMode } from './theme/index.tsx'
 
 // 空白模板：下拉框中的特殊选项，选中后清空编辑器，供自由编写测试代码
 const BLANK_TEMPLATE = '__blank__'
@@ -15,12 +16,16 @@ function App() {
   const templates = listTemplates()
   const [currentPath, setCurrentPath] = useState<string>('../template/overrides/call.js')
   const [running, setRunning] = useState(false)
-  const [runKey, setRunKey] = useState(0)
   const [importedName, setImportedName] = useState<string | null>(null)
+  const { mode, setMode } = useTheme()
+
+  // 组件卸载时释放 worker 资源
+  useEffect(() => {
+    return () => codeRunner.destroy()
+  }, [])
 
   const editorRef = useRef<EditorHandle>(null)
   const consoleRef = useRef<ConsoleHandle>(null)
-  const iframeRef = useRef<HTMLIFrameElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const options = [
@@ -109,22 +114,26 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
-  // 运行：重建 iframe（srcdoc 全新文档）清空上次的全局状态与定时器
+  // 运行：在 Web Worker 里执行用户代码，主线程不卡，死循环也能用「停止」强制终止
   function runCode() {
     const code = editorRef.current?.getValue() ?? ''
     consoleRef.current?.clear()
+    codeRunner.run(code)
     setRunning(true)
-    // 递增 key 强制 React 重建 iframe
-    setRunKey((k) => k + 1)
-    // 等 iframe 重建后更新 srcdoc
-    requestAnimationFrame(() => {
-      if (iframeRef.current) {
-        iframeRef.current.srcdoc = buildRunnerDoc(code)
-      }
-      // 给个短暂延迟让运行状态看起来更自然
-      setTimeout(() => setRunning(false), 400)
-    })
   }
+
+  // 停止：terminate worker，立即终止运行（包括 while(true) 死循环）
+  function stopCode() {
+    codeRunner.stop()
+    setRunning(false)
+  }
+
+  // 监听 worker 的「完成」信号：同步代码 eval 返回后自动复位运行状态。
+  // 有定时器/死循环的代码不会走到 done（死循环永不返回），因此停止按钮会保持可用。
+  useEffect(() => {
+    codeRunner.setOnDone(() => setRunning(false))
+    return () => codeRunner.setOnDone(null)
+  }, [])
 
   // 当前文件名（展示在编辑器标题栏）
   const currentLabel =
@@ -136,14 +145,14 @@ function App() {
         : currentPath.replace('../template/', ''))
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-slate-950 text-slate-100">
+    <div className="flex h-screen flex-col overflow-hidden bg-[var(--app-bg)] text-[var(--text-primary)]">
       {/* 顶部工具栏 */}
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-800 bg-slate-900 px-4 py-3">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--border)] bg-[var(--panel-bg)] px-4 py-3">
         <div className="flex items-center gap-2 text-base font-semibold">
-          <span className="inline-block h-3 w-3 rounded-full bg-sky-400" />
+          <span className="inline-block h-3 w-3 rounded-full bg-[var(--accent-logo)]" />
           JS Playground
         </div>
-        <Divider orientation="vertical" className="border-slate-700" />
+        <Divider orientation="vertical" className="border-[var(--border-strong)]" />
         <Space size={8}>
           <Button icon={<FileAddOutlined />} onClick={handleNewFile}>
             新建
@@ -162,12 +171,42 @@ function App() {
             />
           </div>
         </Space>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <Dropdown
+            menu={{
+              items: [
+                { key: 'dark', icon: <MoonOutlined />, label: '深色' },
+                { key: 'light', icon: <SunOutlined />, label: '浅色' },
+                { key: 'system', icon: <DesktopOutlined />, label: '跟随系统' },
+              ],
+              selectable: true,
+              selectedKeys: [mode],
+              onClick: ({ key }) => setMode(key as ThemeMode),
+            }}
+            trigger={['click']}
+          >
+            <Button type="text" size="middle" title="切换主题">
+              {/* 用固定尺寸的 span 作为稳定容器，只替换内部图标，避免图标闪没；
+                  图标颜色用 CSS 变量而非 antd token，切换主题时颜色稳定不闪变 */}
+              <span
+                className="flex h-[18px] w-[18px] items-center justify-center text-[var(--text-muted)] transition-colors duration-200"
+                style={{ fontSize: 18 }}
+              >
+                {mode === 'light' ? (
+                  <SunOutlined />
+                ) : mode === 'dark' ? (
+                  <MoonOutlined />
+                ) : (
+                  <DesktopOutlined />
+                )}
+              </span>
+            </Button>
+          </Dropdown>
           <a
             href="https://github.com/bohecola/js-playground"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-slate-400 transition-colors hover:text-sky-300"
+            className="flex items-center text-[var(--text-muted)] transition-colors hover:text-[var(--accent-number)]"
             title="GitHub 仓库"
           >
             <GithubOutlined style={{ fontSize: 22 }} />
@@ -178,10 +217,10 @@ function App() {
       {/* 主区域：编辑器 + 输出 */}
       <main className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:flex-row">
         {/* 左：编辑器 */}
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900 md:flex-[1.2]">
-          <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--panel-bg)] md:flex-[1.2]">
+          <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="text-sm text-slate-400">Editor</span>
+              <span className="text-sm text-[var(--text-muted)]">Editor</span>
               <Tag color="blue" style={{ marginInlineEnd: 0 }}>
                 {currentLabel}
               </Tag>
@@ -192,9 +231,17 @@ function App() {
               </Button>
               <Button
                 size="small"
+                danger
+                icon={<StopOutlined />}
+                onClick={stopCode}
+                disabled={!running}
+              >
+                停止
+              </Button>
+              <Button
+                size="small"
                 type="primary"
                 icon={<PlayCircleOutlined />}
-                loading={running}
                 onClick={runCode}
               >
                 Run
@@ -207,8 +254,8 @@ function App() {
         </section>
 
         {/* 右：输出 */}
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
-          <div className="border-b border-slate-800 px-3 py-2 text-sm text-slate-400">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--panel-bg)]">
+          <div className="border-b border-[var(--border)] px-3 py-2 text-sm text-[var(--text-muted)]">
             Console
           </div>
           <div className="min-h-0 flex-1">
@@ -216,15 +263,6 @@ function App() {
           </div>
         </section>
       </main>
-
-      {/* 隐藏的 iframe 用于运行用户代码（sandbox 严格隔离） */}
-      <iframe
-        key={runKey}
-        ref={iframeRef}
-        title="runner"
-        className="hidden"
-        sandbox="allow-scripts"
-      />
 
       {/* 隐藏的文件选择框，用于「导入」按钮读取本地 .js 文件 */}
       <input

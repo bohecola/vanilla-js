@@ -5,6 +5,30 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JS Playground · JavaScript 代码在线预览</title>
+    <script>
+      /*
+        首帧之前定下主题：React 挂载前 <html> 上没有 data-theme，
+        会先按系统配色画一帧再跳变（默认是深色模式，浅色系统上就闪一下白）。
+        这里同步读一次 localStorage 把 data-theme 补上。
+        键名与默认值需与 src/theme/index.tsx 的 STORAGE_KEY / getInitialMode 保持一致。
+      */
+      (function () {
+        var theme = 'dark'
+        try {
+          var saved = localStorage.getItem('js-playground-theme')
+          var mode = saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'dark'
+          theme =
+            mode === 'system'
+              ? window.matchMedia('(prefers-color-scheme: light)').matches
+                ? 'light'
+                : 'dark'
+              : mode
+        } catch (e) {
+          /* 隐私模式下 localStorage 可能抛错，退回默认深色 */
+        }
+        document.documentElement.setAttribute('data-theme', theme)
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

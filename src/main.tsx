@@ -3,29 +3,50 @@ import ReactDOM from 'react-dom/client'
 import { ConfigProvider, theme } from 'antd'
 import zhCN from 'antd/locale/zh_CN.js'
 import App from './App.tsx'
+import { ThemeProvider, useTheme } from './theme/index.tsx'
 import './assets/style/index.css'
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
+// 把主题模式桥接到 antd：darkAlgorithm / defaultAlgorithm 跟随当前主题
+function ThemedApp() {
+  const { effective } = useTheme()
+  const isDark = effective === 'dark'
+
+  return (
     <ConfigProvider
       locale={zhCN}
       theme={{
-        algorithm: theme.darkAlgorithm,
+        algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
-          colorBgContainer: '#1e293b',
-          colorBgElevated: '#1e293b',
-          colorBorder: '#334155',
           colorPrimary: '#38bdf8',
           borderRadius: 8,
+          ...(isDark
+            ? {
+                colorBgContainer: '#0f172a',
+                colorBgElevated: '#0f172a',
+                colorBorder: '#334155',
+              }
+            : {
+                colorBgContainer: '#ffffff',
+                colorBgElevated: '#ffffff',
+                colorBorder: '#cbd5e1',
+              }),
         },
         components: {
           Select: {
-            optionSelectedBg: '#0f172a',
+            optionSelectedBg: isDark ? '#020617' : '#e0f2fe',
           },
         },
       }}
     >
       <App />
     </ConfigProvider>
+  )
+}
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <ThemeProvider>
+      <ThemedApp />
+    </ThemeProvider>
   </React.StrictMode>,
 )
