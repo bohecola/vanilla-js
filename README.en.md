@@ -1,6 +1,6 @@
 # Jotter
 
-> [English](./README.en.md) | 中文
+> English | [中文](./README.md)
 
 **Jotter** is an online scratchpad for running JavaScript and TypeScript code. Write a snippet, hit run, and see the console output immediately.
 
