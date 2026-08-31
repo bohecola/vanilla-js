@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { take } from 'lodash-es'
 
 // init.js 序列化后值的类型。普通 JSON 值（string/number/boolean/array/plain object）
 // 直接透传；特殊值用 { __type: '...' } 标记，这里负责把它们渲染成对应的 JS 类型外观。
@@ -19,6 +20,8 @@ type Marked =
   | { __type: 'Map'; entries: [unknown, unknown][] }
   | { __type: 'Set'; items: unknown[] }
 
+// 不用 lodash 的 isPlainObject：它的返回类型是 boolean 而不是类型谓词，
+// 换过去下面每一处 value.__type 的收窄都得改成断言
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
@@ -82,9 +85,9 @@ interface InspectorProps {
 
 // 折叠时的摘要：{key1, key2, …} 或 Array(n)
 function objectPreview(value: Record<string, unknown>): string {
-  const keys = Object.keys(value).slice(0, 4)
-  const shown = keys.join(', ')
-  const rest = Object.keys(value).length > 4 ? ', …' : ''
+  const keys = Object.keys(value)
+  const shown = take(keys, 4).join(', ')
+  const rest = keys.length > 4 ? ', …' : ''
   return `{${shown}${rest}}`
 }
 

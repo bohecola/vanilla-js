@@ -7,7 +7,10 @@
 // esbuild 自己会另起 worker 跑 wasm（initialize 默认 worker: true），不阻塞 UI。
 import * as esbuild from 'esbuild-wasm/esm/browser.js'
 import esbuildWasmUrl from 'esbuild-wasm/esbuild.wasm?url'
+import { get } from 'lodash-es'
+import { AppError } from './app-error'
 import { stripExports } from './strip-exports'
+import type { CompileIssue } from '@/i18n/dict.zh'
 
 // 初始化状态缓存（Promise 复用，避免并发/重复初始化）
 let esbuildReady: Promise<void> | null = null
@@ -16,9 +19,9 @@ function ensureEsbuild(): Promise<void> {
   if (!esbuildReady) {
     esbuildReady = esbuild.initialize({ wasmURL: esbuildWasmUrl }).catch((err) => {
       esbuildReady = null // 失败后允许下次重试
-      throw new Error(
-        `TypeScript 编译器初始化失败（esbuild wasm 加载失败）：${err instanceof Error ? err.message : String(err)}`
-      )
+      throw new AppError('err.compile.initFailed', {
+        message: err instanceof Error ? err.message : String(err),
+      })
     })
   }
   return esbuildReady
@@ -31,29 +34,26 @@ export function warmupCompiler(): void {
   })
 }
 
-// 把 esbuild 的编译错误整理成一条可读的信息（原始对象是 {errors, warnings}，
-// 直接丢给控制台会渲染成一坨结构体）
-function formatCompileError(err: unknown): Error {
-  const errors = (
-    err as {
-      errors?: Array<{ text?: string; location?: { line?: number; column?: number } | null }>
-    }
-  )?.errors
+// 把 esbuild 的编译错误整理成一条待翻译的错误。
+//
+// 这里只做「取出结构、把列号从 0 基改成 1 基」，句子怎么拼（分隔符、位置的写法、
+// 拿不到文案时的兜底词）全在字典里 —— 那些都是随语言变的东西。
+function formatCompileError(err: unknown): AppError {
+  // 用 get 探一层：err 是 unknown，手写的话得先铺一整段结构体类型再断言
+  const errors = get(err, 'errors') as
+    | Array<{ text?: string; location?: { line?: number; column?: number } | null }>
+    | undefined
   if (Array.isArray(errors) && errors.length > 0) {
-    // 控制台一条日志渲染成一行，换行会被折叠，所以多条错误用「；」串起来
-    const detail = errors
-      .map((e) => {
-        const loc = e.location
-          ? `（第 ${e.location.line} 行第 ${(e.location.column ?? 0) + 1} 列）`
-          : ''
-        return `${e.text ?? '未知错误'}${loc}`
-      })
-      .join('；')
-    return new Error(`TypeScript 编译失败：${detail}`)
+    const issues: CompileIssue[] = errors.map((e) => ({
+      text: e.text ?? '',
+      // esbuild 的 column 是 0 基的，+1 在这里做完，字典只负责印数字
+      loc: e.location ? { line: e.location.line ?? 0, column: (e.location.column ?? 0) + 1 } : null,
+    }))
+    return new AppError('err.compile.failed', { issues })
   }
-  return new Error(
-    `TypeScript 编译失败：${err instanceof Error ? err.message : String(err)}`
-  )
+  return new AppError('err.compile.raw', {
+    message: err instanceof Error ? err.message : String(err),
+  })
 }
 
 /**

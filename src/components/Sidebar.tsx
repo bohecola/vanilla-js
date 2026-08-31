@@ -1,0 +1,942 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { clamp, groupBy, map } from 'lodash-es'
+import { Button } from '@/components/ui/button'
+import { Icon } from '@/components/ui/icon'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
+import { MAX_ENTRIES_PER_DIR, languageOf, type Entry, type FileEntry } from '@/lib/fs-access'
+import { translate, useI18n, type T } from '@/i18n/context'
+import { rootAsEntry, type Workspace, type WorkspaceRoot } from '@/hooks/useWorkspace'
+import type { Draft, FileDraft } from '@/hooks/useFileDraft'
+
+/*
+  左侧文件栏：上半是用户的本地目录（可以同时开多个，懒展开），下半是内置 Demo。
+
+  宽度用手写的拖拽把手，没有引入 react-resizable-panels：整个界面只有这一条分隔线
+  需要拖，而引入它意味着把编辑器/控制台那套本来没人抱怨的 flex 布局也一起改掉。
+*/
+
+const WIDTH_KEY = 'jotter:sidebarWidth'
+const COLLAPSED_KEY = 'jotter:sidebarCollapsed'
+/**
+ * Demo 那一段的展开状态。
+ *
+ * 键名从 `jotter:templatesCollapsed` 换成了这个，不是为了好看：那一版的默认值是「展开」，
+ * 而持久化的 effect 每次挂载都会写一遍，于是所有老用户本地都存着「展开」——
+ * 沿用同一个键的话，「默认收起」这件事对他们永远不会生效。
+ */
+const TEMPLATES_KEY = 'jotter:templatesOpen'
+/** 上一版的键。语义正好相反，留在 localStorage 里只会让人读错，见一次清一次。 */
+const LEGACY_TEMPLATES_KEY = 'jotter:templatesCollapsed'
+const MIN_WIDTH = 180
+const MAX_WIDTH = 480
+const DEFAULT_WIDTH = 264
+
+/**
+ * 刷新的最短转圈时长。读盘通常几毫秒就回来，转不满一圈就停，看着和没点一样。
+ * 数值要和图标上的 animation-duration 一致：正好转满一整圈，收尾时不会从半圈跳回原位。
+ */
+const REFRESH_SPIN_MS = 500
+
+/**
+ * 每层缩进的宽度，刻意等于「图标 + 图标后的间距」（size-3.5 = 14px，gap-1.5 = 6px）：
+ * 这样子项的图标正好落在父项名字的起点上，箭头不会戳到上一层的名字前面去。
+ * 改图标尺寸或行内 gap 时这个数要跟着改，三者是一组。
+ */
+const INDENT = 20
+
+/** 一行的左内边距。根目录行是 depth 0，它下面的第一层是 1。 */
+const padOf = (depth: number) => 8 + depth * INDENT
+
+/**
+ * 行首那个图标槽（折叠箭头 / 文件图标都放这里）。
+ *
+ * `flex` 不是装饰：图标是 inline-block、按基线对齐，而这个 <span> 作为 flex item
+ * 的高度跟着 line-height 走（13px 字号 → 19.5px），14px 的图标于是被顶到基线上方，
+ * 中线比文字高出 1.75px —— 看着就是「箭头没和文字居中」。让槽自己先居中一次，
+ * 图标就只按自身高度参与外层那个 items-center，两边中线才真正对齐。
+ */
+const ICON_SLOT = 'flex shrink-0 items-center text-[var(--text-muted)] [&>[data-slot=icon]]:size-3.5'
+
+/**
+ * 内置 Demo 按所在目录分组：路径提到分组标题上，条目里只留文件名。
+ *
+ * t 是传进来的而不是在函数里取的 —— 这是个纯函数，不是组件，钩子在这里用不了。
+ */
+function groupTemplates(paths: string[], t: T) {
+  const byDir = groupBy(paths, (path) => {
+    const rel = path.replace('../template/', '')
+    const slash = rel.lastIndexOf('/')
+    return slash === -1 ? t('sidebar.uncategorized') : rel.slice(0, slash)
+  })
+  return map(byDir, (items, dir) => ({
+    dir,
+    items: items.map((path) => ({ path, label: path.slice(path.lastIndexOf('/') + 1) })),
+  }))
+}
+
+function readWidth(): number {
+  try {
+    const raw = Number(localStorage.getItem(WIDTH_KEY))
+    return Number.isFinite(raw) && raw >= MIN_WIDTH && raw <= MAX_WIDTH ? raw : DEFAULT_WIDTH
+  } catch {
+    return DEFAULT_WIDTH
+  }
+}
+
+/**
+ * 树里的一行。
+ *
+ * 剩下的 props（含 ref）原样透传到那个 <button>：右键菜单要把事件和 ref 挂在
+ * 这个可聚焦元素上，键盘的 Shift+F10 / 菜单键才打得开菜单。
+ * React 19 里 ref 就是普通 prop，不用 forwardRef。
+ */
+interface RowProps extends React.ComponentProps<'button'> {
+  depth: number
+  label: string
+  active?: boolean
+  dirty?: boolean
+  /** 新建的目标目录：用一圈内描边标出，和「当前打开的文件」（实心底色）区分开 */
+  selected?: boolean
+  /** 命中忽略名单的目录、以及非文本文件：显示为淡色，但照样可点 */
+  dimmed?: boolean
+  icon: React.ReactNode
+}
+
+/** 缩进走 padding 而不是嵌套 margin，hover 背景才能铺满整行。 */
+function Row({
+  depth,
+  label,
+  active,
+  dirty,
+  selected,
+  dimmed,
+  icon,
+  className,
+  style,
+  ...rest
+}: RowProps) {
+  const { t } = useI18n()
+  return (
+    <button
+      type="button"
+      title={label}
+      // style 要和外面传进来的合并：ContextMenuTrigger asChild 会往下塞一个
+      // style（WebkitTouchCallout），直接 {...rest} 会把这里的缩进整个顶掉
+      style={{ paddingLeft: padOf(depth), ...style }}
+      className={cn(
+        'flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left text-[13px]',
+        'hover:bg-[var(--panel-hover)]',
+        active
+          ? 'bg-[var(--panel-hover)] font-medium text-[var(--text-primary)]'
+          : 'text-[var(--text-body)]',
+        dimmed && !active && 'text-[var(--text-faint)]',
+        selected && 'ring-1 ring-[var(--primary)]/50 ring-inset',
+        className
+      )}
+      {...rest}
+    >
+      <span className={ICON_SLOT}>{icon}</span>
+      <span className="truncate font-mono">{label}</span>
+      {dirty && (
+        <span
+          aria-label={t('sidebar.unsaved')}
+          className="ml-auto size-1.5 shrink-0 rounded-full bg-[var(--accent-symbol)]"
+        />
+      )}
+    </button>
+  )
+}
+
+/**
+ * 文件行 / 目录行的右键菜单。
+ *
+ * trigger 用 asChild 直接套在行本身那个 <button> 上，而不是外面包一层 <div>：
+ * 落在可聚焦元素上，键盘的 Shift+F10 / 菜单键才能打开它。
+ * 根目录行刻意不套 —— 那一行右边的 × 是「关闭目录」（不动磁盘），
+ * 把「删掉整个目录」放在同一行上太危险。
+ */
+function EntryMenu({
+  entry,
+  onRename,
+  onDelete,
+  children,
+}: {
+  entry: Entry
+  onRename: (entry: Entry) => void
+  onDelete: (entry: Entry) => void
+  children: React.ReactNode
+}) {
+  const { t } = useI18n()
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent
+        className="min-w-[8.5rem]"
+        // 菜单关掉时不要把焦点还给那一行：重命名会当场把这一行换成输入框，
+        // 焦点被抢回去等于触发输入框的失焦取消，这次改名就没了
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
+        <ContextMenuItem onSelect={() => onRename(entry)}>
+          <Icon className="icon-[codicon--edit]" />
+          {t('menu.rename')}
+        </ContextMenuItem>
+        {/* 图标显式给 text-destructive：菜单项里没写颜色的图标会被统一压成 muted，
+            这一项的文字是红的，图标得跟着 */}
+        <ContextMenuItem variant="destructive" onSelect={() => onDelete(entry)}>
+          <Icon className="icon-[codicon--trash] text-destructive" />
+          {t('menu.delete')}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}
+
+/**
+ * 行内命名输入。新建时插在子列表第一行，重命名时就地替换掉原来那一行。
+ * 样式刻意照抄 Row：它应该看着就是树里的一行，
+ * 而不是一个凭空插进来的表单控件（这也是没用 shadcn 的 Input 的原因，
+ * 它自带的高度和 padding 和树行对不齐）。
+ */
+function DraftRow({ depth, draft, value }: { depth: number; draft: FileDraft; value: Draft }) {
+  const { t } = useI18n()
+  const renaming = value.mode === 'rename'
+  return (
+    <li>
+      <div
+        style={{ paddingLeft: padOf(depth) }}
+        className="flex w-full items-center gap-1.5 py-1 pr-2"
+      >
+        <span className={ICON_SLOT}>
+          {value.kind === 'file' ? (
+            <Icon className="icon-[lucide--file-code-2]" />
+          ) : renaming ? (
+            <Icon className="icon-[lucide--chevron-right]" />
+          ) : (
+            <Icon className="icon-[lucide--folder-plus]" />
+          )}
+        </span>
+        <input
+          // 输入框是点击「新建」/「重命名」后当场出现的，焦点必须跟过来，
+          // 否则得再点一下才能打字
+          autoFocus
+          value={value.name}
+          disabled={draft.busy}
+          aria-label={
+            renaming
+              ? t('sidebar.renameAria')
+              : value.kind === 'file'
+                ? t('sidebar.newFileAria')
+                : t('sidebar.newDirAria')
+          }
+          onChange={(e) => draft.setName(e.target.value)}
+          onFocus={(e) => e.currentTarget.select()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') draft.submit()
+            else if (e.key === 'Escape') draft.cancel()
+          }}
+          // 失焦取消而不是提交：新建和改名都是有副作用的动作，点到别处顺手建出一个
+          // 「未命名.js」比丢掉几个字更烦人
+          onBlur={draft.cancel}
+          className="min-w-0 flex-1 rounded-sm border border-[var(--primary)]/60 bg-[var(--panel-bg)] px-1 font-mono text-[13px] text-[var(--text-primary)] outline-none"
+        />
+      </div>
+      {value.error && (
+        <p
+          style={{ paddingLeft: padOf(depth + 1) }}
+          className="pb-1 pr-2 text-[12px] leading-snug text-[var(--accent-error)]"
+        >
+          {translate(value.error, t)}
+        </p>
+      )}
+    </li>
+  )
+}
+
+/**
+ * 根目录那一行。和普通目录行的差别：名字加粗，右边挂一个「操作」菜单，
+ * 没授权时整行变成「点我恢复」。它自己不缩进，子层从 depth 1 起 ——
+ * 同时开好几个目录时，缩进是唯一能看出「这堆文件属于哪个根」的线索。
+ *
+ * 那些动作（新建、刷新、移除）都收进一个菜单里，而不是在行尾摊开成一排图标：
+ * 行尾常驻一个 × 太像「删掉这个目录」，而它其实只是从列表里去掉。
+ * 菜单同时挂在 ⋯ 按钮和整行的右键上 —— 右键是 VS Code 的习惯，
+ * ⋯ 是给不知道有右键这回事的人留的入口。
+ */
+function RootRow({
+  root,
+  workspace,
+  draft,
+  onClose,
+}: {
+  root: WorkspaceRoot
+  workspace: Workspace
+  draft: FileDraft
+  onClose: (root: WorkspaceRoot) => void
+}) {
+  const { t } = useI18n()
+  const open = workspace.expanded.has(root.id)
+  const locked = root.needsPermission
+  // 菜单是受控的：⋯ 按钮和整行的右键要打开同一个菜单
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  /*
+    菜单项的动作一律等菜单关完再执行，而不是在 onSelect 里当场做。
+
+    Radix 关菜单有退出动画，它的 FocusScope 要等动画播完才拆；在 onSelect 里就把
+    输入框插进树里的话，输入框 autoFocus 拿到的焦点会被随后的 FocusScope 拆除
+    甩回 <body>（实测就是这样），用户得再点一次才能打字。
+    onCloseAutoFocus 正好是「已经关完、焦点还没归位」的那一刻。
+
+    赋值都写在各个 onSelect 里，而不是抽一个 afterClose(fn) helper ——
+    helper 是在渲染期间被调用的，react-hooks/refs 会把它当成「渲染时读 ref」。
+  */
+  const afterCloseRef = useRef<(() => void) | null>(null)
+
+  // 新建落在这个根上，而不是当前的「目标目录」。select 是异步的，
+  // start 读到的还是旧 target，所以父目录显式传进去
+  const startIn = (kind: 'file' | 'directory') => {
+    workspace.select(root.id)
+    draft.start(kind, { parentPath: root.id })
+  }
+
+  return (
+    <div className="group flex items-center gap-0.5 pr-1">
+      <button
+        type="button"
+        title={
+          locked
+            ? t('sidebar.rootLocked', { name: root.name })
+            : t('sidebar.rootHint', { name: root.name })
+        }
+        // 没授权时点击就是去要权限：requestPermission 只能在用户手势里发起，
+        // 而这一行本身就是那个手势最自然的落点
+        onClick={() => {
+          if (locked) {
+            void workspace.restore(root.id)
+            return
+          }
+          workspace.select(root.id)
+          void workspace.toggle(rootAsEntry(root))
+        }}
+        // 右键落在行上，菜单开在 ⋯ 那个位置（Radix 的 DropdownMenu 是贴着
+        // trigger 定位的）。位置固定反而比跟着指针跑好认。
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setMenuOpen(true)
+        }}
+        style={{ paddingLeft: padOf(0) }}
+        className={cn(
+          'flex min-w-0 flex-1 items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-[13px]',
+          'hover:bg-[var(--panel-hover)]',
+          workspace.target === root.id && 'ring-1 ring-[var(--primary)]/50 ring-inset'
+        )}
+      >
+        <span className={ICON_SLOT}>
+          {locked ? (
+            <Icon className="icon-[lucide--lock]" />
+          ) : open ? (
+            <Icon className="icon-[lucide--chevron-down]" />
+          ) : (
+            <Icon className="icon-[lucide--chevron-right]" />
+          )}
+        </span>
+        <span
+          className={cn(
+            'truncate font-mono',
+            locked ? 'text-[var(--text-faint)]' : 'font-medium text-[var(--text-primary)]'
+          )}
+        >
+          {root.name}
+        </span>
+        {locked && (
+          <span className="ml-auto shrink-0 text-[11px] text-[var(--text-faint)]">
+            {t('sidebar.needAuth')}
+          </span>
+        )}
+      </button>
+      {/* ⋯ 只在悬停 / 聚焦 / 菜单开着时露出来：目录多了之后，一排常驻的图标全是噪音 */}
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            title={t('sidebar.rootMenu', { name: root.name })}
+            aria-label={t('sidebar.rootMenu', { name: root.name })}
+            className="shrink-0 rounded-sm p-0.5 text-[var(--text-faint)] opacity-0 transition-opacity group-hover:opacity-100 hover:bg-[var(--panel-hover)] hover:text-[var(--text-body)] focus-visible:opacity-100 data-[state=open]:opacity-100"
+          >
+            <Icon className="icon-[lucide--ellipsis] size-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          className="min-w-[9rem]"
+          onCloseAutoFocus={(e) => {
+            // 焦点不要回到 ⋯：新建的输入框马上就要用它，
+            // 回到 ⋯ 再被输入框抢走，等于给输入框来一次失焦（= 取消）
+            e.preventDefault()
+            const run = afterCloseRef.current
+            afterCloseRef.current = null
+            run?.()
+          }}
+        >
+          {/* 没授权的目录读不出内容，新建和刷新都没有意义，但「移除」得留着 ——
+              否则一个待授权的目录就再也去不掉了 */}
+          {!locked && (
+            <>
+              <DropdownMenuItem
+                onSelect={() => {
+                  afterCloseRef.current = () => startIn('file')
+                }}
+              >
+                <Icon className="icon-[codicon--new-file]" />
+                {t('menu.newFile')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  afterCloseRef.current = () => startIn('directory')
+                }}
+              >
+                <Icon className="icon-[codicon--new-folder]" />
+                {t('menu.newDir')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  afterCloseRef.current = () => void workspace.refresh(root.id)
+                }}
+              >
+                <Icon className="icon-[codicon--refresh]" />
+                {t('menu.refresh')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          {/* 图标显式给 text-destructive：菜单项里没写颜色的图标会被统一压成 muted */}
+          <DropdownMenuItem
+            variant="destructive"
+            onSelect={() => {
+              afterCloseRef.current = () => onClose(root)
+            }}
+          >
+            <Icon className="icon-[codicon--close] text-destructive" />
+            {t('menu.removeRoot')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
+interface TreeProps {
+  path: string
+  depth: number
+  workspace: Workspace
+  draft: FileDraft
+  activeKey: string | null
+  dirtyKeys: Set<string>
+  onOpenFile: (entry: FileEntry) => void
+  onRenameEntry: (entry: Entry) => void
+  onDeleteEntry: (entry: Entry) => void
+}
+
+/** 递归渲染一层目录。没有缓存到 childrenByPath 的层不渲染（还没展开过）。 */
+function Tree({
+  path,
+  depth,
+  workspace,
+  draft,
+  activeKey,
+  dirtyKeys,
+  onOpenFile,
+  onRenameEntry,
+  onDeleteEntry,
+}: TreeProps) {
+  const { t } = useI18n()
+  const listing = workspace.childrenByPath.get(path)
+  if (!listing) return null
+
+  const editing = draft.draft
+  // 新建的输入框插在这一层的第一行；重命名的输入框在下面就地替换掉那一行
+  const drafting = editing?.mode === 'create' && editing.parentPath === path ? editing : null
+
+  const rowFor = (entry: Entry) => {
+    if (editing?.mode === 'rename' && editing.target?.path === entry.path) {
+      return <DraftRow key={entry.path} depth={depth} draft={draft} value={editing} />
+    }
+
+    if (entry.kind === 'directory') {
+      const open = workspace.expanded.has(entry.path)
+      return (
+        <li key={entry.path}>
+          <EntryMenu entry={entry} onRename={onRenameEntry} onDelete={onDeleteEntry}>
+            <Row
+              depth={depth}
+              label={entry.name}
+              dimmed={entry.ignored}
+              selected={workspace.target === entry.path}
+              icon={
+                open ? (
+                  <Icon className="icon-[lucide--chevron-down]" />
+                ) : (
+                  <Icon className="icon-[lucide--chevron-right]" />
+                )
+              }
+              // 一次点击同时做两件事：展开/收起，并把它设为新建目标。
+              // 不拆成「点箭头展开、点名字选中」——这条侧栏最窄只有 180px，
+              // 两个命中区挤在一起只会点错。
+              onClick={() => {
+                workspace.select(entry.path)
+                void workspace.toggle(entry)
+              }}
+            />
+          </EntryMenu>
+          {open && (
+            <Tree
+              path={entry.path}
+              depth={depth + 1}
+              workspace={workspace}
+              draft={draft}
+              activeKey={activeKey}
+              dirtyKeys={dirtyKeys}
+              onOpenFile={onOpenFile}
+              onRenameEntry={onRenameEntry}
+              onDeleteEntry={onDeleteEntry}
+            />
+          )}
+        </li>
+      )
+    }
+
+    const key = `local:${entry.path}`
+    const language = languageOf(entry.name)
+    return (
+      <li key={entry.path}>
+        <EntryMenu entry={entry} onRename={onRenameEntry} onDelete={onDeleteEntry}>
+          <Row
+            depth={depth}
+            label={entry.name}
+            active={activeKey === key}
+            dirty={dirtyKeys.has(key)}
+            // 认不出后缀的文件点开会被拒（可能是二进制），先在视觉上说明它不一样
+            dimmed={language === null}
+            icon={
+              language === null ? (
+                <Icon className="icon-[lucide--file-text]" />
+              ) : (
+                <Icon className="icon-[lucide--file-code-2]" />
+              )
+            }
+            onClick={() => onOpenFile(entry)}
+          />
+        </EntryMenu>
+      </li>
+    )
+  }
+
+  return (
+    <ul>
+      {drafting && <DraftRow depth={depth} draft={draft} value={drafting} />}
+      {listing.entries.map(rowFor)}
+      {listing.entries.length === 0 && !drafting && (
+        <li
+          style={{ paddingLeft: padOf(depth + 1) }}
+          className="py-1 text-[12px] text-[var(--text-faint)]"
+        >
+          {t('sidebar.emptyDir')}
+        </li>
+      )}
+      {listing.truncated && (
+        <li
+          style={{ paddingLeft: padOf(depth + 1) }}
+          className="py-1 text-[12px] text-[var(--text-faint)]"
+        >
+          {/* 上限从常量取，不写在句子里：否则中英两份字典各自记一个 500，改的时候准漏 */}
+          {t('sidebar.truncated', { max: MAX_ENTRIES_PER_DIR })}
+        </li>
+      )}
+    </ul>
+  )
+}
+
+export interface SidebarProps {
+  workspace: Workspace
+  draft: FileDraft
+  /** 内置 Demo 的 glob 路径列表 */
+  templates: string[]
+  activeKey: string | null
+  dirtyKeys: Set<string>
+  /** 开一份空白草稿。不落在任何目录里，Ctrl+S 时再决定存到哪 */
+  onNewScratch: () => void
+  onOpenTemplate: (path: string) => void
+  onOpenLocalFile: (entry: FileEntry) => void
+  /** 「把全部 Demo 存到本地文件夹」。选文件夹、落盘、接管成根都在 App 那边 */
+  onSaveDemos: () => void
+  /** 右键菜单里的两项。都只作用在树里的项上，根目录行不给（那一行的 × 是「关闭目录」） */
+  onRenameEntry: (entry: Entry) => void
+  onDeleteEntry: (entry: Entry) => void
+  /** 根目录菜单里的「移除目录」。不动磁盘，但要确认、并且要清掉这棵树里打开过的文件 */
+  onCloseRoot: (root: WorkspaceRoot) => void
+}
+
+export default function Sidebar({
+  workspace,
+  draft,
+  templates,
+  activeKey,
+  dirtyKeys,
+  onNewScratch,
+  onOpenTemplate,
+  onOpenLocalFile,
+  onSaveDemos,
+  onRenameEntry,
+  onDeleteEntry,
+  onCloseRoot,
+}: SidebarProps) {
+  const { t } = useI18n()
+  const [width, setWidth] = useState(readWidth)
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(COLLAPSED_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  // Demo 这一段默认收起：它是「要用的时候才翻开」的东西，
+  // 首屏摊开一堆别人的文件名，会把上面真正在用的本地目录挤下去
+  const [templatesOpen, setTemplatesOpen] = useState(() => {
+    try {
+      return localStorage.getItem(TEMPLATES_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const [refreshing, setRefreshing] = useState(false)
+  useEffect(() => {
+    try {
+      localStorage.setItem(WIDTH_KEY, String(width))
+      localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0')
+      localStorage.setItem(TEMPLATES_KEY, templatesOpen ? '1' : '0')
+      localStorage.removeItem(LEGACY_TEMPLATES_KEY)
+    } catch {
+      // 记不住就记不住
+    }
+  }, [width, collapsed, templatesOpen])
+
+  // 转圈至少持续 REFRESH_SPIN_MS，否则「点了刷新」这件事用户根本看不见。
+  // 期间再点直接忽略，免得转圈被下一次点击打断又重来。
+  async function handleRefresh() {
+    if (refreshing) return
+    setRefreshing(true)
+    await Promise.all([
+      workspace.refresh(workspace.target),
+      new Promise((resolve) => setTimeout(resolve, REFRESH_SPIN_MS)),
+    ])
+    setRefreshing(false)
+  }
+
+  // 手写拖拽：pointer 事件挂在 window 上，指针移出把手甚至移出窗口也不会中断。
+  // 起始宽度从 DOM 上量，省掉一个「把 state 镜像到 ref」的中间层。
+  const startDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const panel = e.currentTarget.parentElement
+    if (!panel) return
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = panel.getBoundingClientRect().width
+    const onMove = (ev: PointerEvent) => {
+      setWidth(clamp(startWidth + ev.clientX - startX, MIN_WIDTH, MAX_WIDTH))
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      document.body.style.removeProperty('cursor')
+      document.body.style.removeProperty('user-select')
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    // 拖动期间锁住光标和选区，否则鼠标划过编辑器会选中一大片文字
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [])
+
+  if (collapsed) {
+    return (
+      <div className="flex shrink-0 flex-col items-center border-r border-[var(--border)] bg-[var(--panel-bg)] px-1.5 py-2">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title={t('sidebar.expand')}
+          aria-label={t('sidebar.expand')}
+          className="text-[var(--text-muted)]"
+          onClick={() => setCollapsed(false)}
+        >
+          <Icon className="icon-[lucide--panel-left-open]" />
+        </Button>
+      </div>
+    )
+  }
+
+  const groups = groupTemplates(templates, t)
+  // 收起后 Demo 里的未保存改动就看不见了，在标题上留一个点顶上
+  const templatesDirty = [...dirtyKeys].some((key) => key.startsWith('builtin:'))
+  // 新建按钮的 title 要说清「建到哪」，否则用户看不出目标是哪个目录。
+  // 多根之后路径里带的是内部 id，得先换成目录名。
+  const targetLabel = workspace.displayPath(workspace.target)
+  const anyLocked = workspace.roots.some((root) => root.needsPermission)
+
+  return (
+    <div
+      style={{ width }}
+      className="relative flex shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--panel-bg)]"
+    >
+      <div className="flex items-center justify-between px-3 py-2">
+        <span className="text-sm text-[var(--text-muted)]">{t('sidebar.title')}</span>
+        <div className="flex items-center">
+          {/* 「新建草稿」原来在顶部工具栏上。挪到这里是因为它和下面那些新建一样是
+              「开一份新东西」，只是它不落在任何目录里；顶栏留给运行相关的东西。
+              图标沿用顶栏那个 lucide file-plus，而不是下面那排的 codicon new-file ——
+              后者的 title 是「在某个目录中新建文件」，两件事不能长成一个样 */}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title={t('sidebar.newScratch')}
+            aria-label={t('sidebar.newScratch')}
+            className="text-[var(--text-muted)]"
+            onClick={onNewScratch}
+          >
+            <Icon className="icon-[lucide--file-plus]" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title={t('sidebar.collapse')}
+            aria-label={t('sidebar.collapse')}
+            className="text-[var(--text-muted)]"
+            onClick={() => setCollapsed(true)}
+          >
+            <Icon className="icon-[lucide--panel-left-close]" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto pb-3">
+        {/* ---- 本地目录 ---- */}
+        <div className="flex items-center gap-0.5 px-2 pb-1 pt-1">
+          <span className="mr-auto text-[11px] tracking-wide text-[var(--text-faint)]">
+            {t('sidebar.localDirs')}
+          </span>
+          {workspace.supported && (
+            <>
+              {/* 这一排用的是 codicon —— VS Code 自己那套图标，「新建文件 / 新建文件夹」
+                  就是它最有辨识度的两个。它是 16px 网格上的实心画法，和别处 lucide 的
+                  24px 描边混在同一行会明显更粗，所以整排统一成 codicon，
+                  并且显式给到 size-3.5：icon-xs 默认的 12px 会把角上那个小加号糊掉 */}
+              {/* 新建 / 刷新都作用在「目标目录」上，所以一个目录都没开时它们没有意义 */}
+              {workspace.hasRoot && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    title={t('sidebar.newFileIn', { target: targetLabel })}
+                    aria-label={t('sidebar.newFileIn', { target: targetLabel })}
+                    className="text-[var(--text-muted)]"
+                    onClick={() => draft.start('file')}
+                  >
+                    <Icon className="icon-[codicon--new-file] size-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    title={t('sidebar.newDirIn', { target: targetLabel })}
+                    aria-label={t('sidebar.newDirIn', { target: targetLabel })}
+                    className="text-[var(--text-muted)]"
+                    onClick={() => draft.start('directory')}
+                  >
+                    <Icon className="icon-[codicon--new-folder] size-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    title={t('sidebar.refreshTarget', { target: targetLabel })}
+                    aria-label={t('sidebar.refreshTarget', { target: targetLabel })}
+                    className="text-[var(--text-muted)]"
+                    onClick={() => void handleRefresh()}
+                  >
+                    <Icon
+                      className={cn(
+                        'icon-[codicon--refresh] size-3.5',
+                        refreshing && 'animate-spin [animation-duration:500ms]'
+                      )}
+                    />
+                  </Button>
+                </>
+              )}
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                title={t('sidebar.openAnother')}
+                aria-label={t('sidebar.openAnother')}
+                className="text-[var(--text-muted)]"
+                onClick={() => void workspace.pick()}
+              >
+                <Icon className="icon-[codicon--folder-opened] size-3.5" />
+              </Button>
+            </>
+          )}
+        </div>
+
+        {!workspace.supported ? (
+          <p className="px-2 pb-2 text-[12px] leading-relaxed text-[var(--text-faint)]">
+            {/* 句子里要提顶栏那个按钮的名字，所以把标签当参数传进去 ——
+                按钮改名时这段说明跟着变，不会脱节 */}
+            {t('sidebar.unsupported', { label: t('header.import') })}
+          </p>
+        ) : workspace.roots.length === 0 ? (
+          <div className="px-2 pb-2">
+            <Button variant="secondary" size="sm" onClick={() => void workspace.pick()}>
+              <Icon className="icon-[codicon--folder-opened]" />
+              {t('sidebar.openFolder')}
+            </Button>
+          </div>
+        ) : (
+          <>
+            {workspace.roots.map((root) => (
+              <div key={root.id}>
+                <RootRow
+                  root={root}
+                  workspace={workspace}
+                  draft={draft}
+                  onClose={onCloseRoot}
+                />
+                {!root.needsPermission && workspace.expanded.has(root.id) && (
+                  <Tree
+                    path={root.id}
+                    depth={1}
+                    workspace={workspace}
+                    draft={draft}
+                    activeKey={activeKey}
+                    dirtyKeys={dirtyKeys}
+                    onOpenFile={onOpenLocalFile}
+                    onRenameEntry={onRenameEntry}
+                    onDeleteEntry={onDeleteEntry}
+                  />
+                )}
+              </div>
+            ))}
+            {/* 重新授权必须发生在用户手势里，所以只能由用户点那一行把目录带回来 */}
+            {anyLocked && (
+              <p className="px-2 pb-1 pt-0.5 text-[12px] leading-relaxed text-[var(--text-faint)]">
+                {/* 同上：引用的是行尾那个角标的文字 */}
+                {t('sidebar.reauthHint', { label: t('sidebar.needAuth') })}
+              </p>
+            )}
+          </>
+        )}
+
+        {workspace.busy && (
+          <p className="px-2 py-1 text-[12px] text-[var(--text-faint)]">{t('sidebar.loading')}</p>
+        )}
+
+        {workspace.error && (
+          <div className="mx-2 mb-2 flex items-start gap-1 rounded-md border border-[var(--accent-error)]/40 bg-[var(--accent-error)]/10 px-2 py-1.5">
+            <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-[var(--accent-error)]">
+              {workspace.error}
+            </p>
+            <button
+              type="button"
+              onClick={workspace.clearError}
+              aria-label={t('notice.close')}
+              className="shrink-0 text-[var(--accent-error)]"
+            >
+              <Icon className="icon-[lucide--x] size-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* ---- Demo 片段 ---- */}
+        <div className="mt-3 flex items-center gap-0.5 pb-1 pr-2">
+          <button
+            type="button"
+            onClick={() => setTemplatesOpen((open) => !open)}
+            aria-expanded={templatesOpen}
+            className="flex min-w-0 flex-1 items-center gap-1 px-2 text-left text-[11px] tracking-wide text-[var(--text-faint)] hover:text-[var(--text-body)]"
+          >
+            {/* 和 ICON_SLOT 同一个道理，只是这里的图标更小、颜色跟着标题走 */}
+            <span className="flex shrink-0 items-center [&>[data-slot=icon]]:size-3">
+              {templatesOpen ? (
+                <Icon className="icon-[lucide--chevron-down]" />
+              ) : (
+                <Icon className="icon-[lucide--chevron-right]" />
+              )}
+            </span>
+            {t('sidebar.demos')}
+            {!templatesOpen && templatesDirty && (
+              <span
+                aria-label={t('sidebar.demosDirty')}
+                className="ml-auto size-1.5 shrink-0 rounded-full bg-[var(--accent-symbol)]"
+              />
+            )}
+          </button>
+          {/* 这些 Demo 打开后改得动，但存不回去（它们是打包进来的字符串，不是磁盘上的文件）。
+              存到本地文件夹之后就是普通的本地文件了，改完 Ctrl+S 直接写回 —— 所以这个
+              按钮才是「真的要用它们」的入口，不支持目录 API 的浏览器上没有意义，直接不显示 */}
+          {workspace.supported && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              title={t('sidebar.saveDemos')}
+              aria-label={t('sidebar.saveDemos')}
+              className="text-[var(--text-muted)]"
+              onClick={onSaveDemos}
+            >
+              <Icon className="icon-[codicon--desktop-download] size-3.5" />
+            </Button>
+          )}
+        </div>
+        {templatesOpen &&
+          groups.map(({ dir, items }) => (
+            <div key={dir}>
+              <div className="px-2 py-0.5 font-mono text-[12px] text-[var(--text-muted)]">{dir}</div>
+              <ul>
+                {items.map((item) => {
+                  const key = `builtin:${item.path}`
+                  return (
+                    <li key={item.path}>
+                      <Row
+                        depth={1}
+                        label={item.label}
+                        active={activeKey === key}
+                        dirty={dirtyKeys.has(key)}
+                        icon={<Icon className="icon-[lucide--file-code-2]" />}
+                        onClick={() => onOpenTemplate(item.path)}
+                      />
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ))}
+      </div>
+
+      {/* 拖拽把手：视觉上只有 1px 的边框，命中区域放宽到 5px */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        onPointerDown={startDrag}
+        onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
+        title={t('sidebar.resize')}
+        className="absolute inset-y-0 right-0 w-[5px] cursor-col-resize hover:bg-[var(--primary)]/30"
+      />
+    </div>
+  )
+}

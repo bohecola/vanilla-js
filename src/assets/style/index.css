@@ -1,60 +1,62 @@
 @layer theme, base, components, utilities;
 
 @import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
 @import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
 
 /*
-  preflight 未启用（避免与 antd 样式冲突），这里单独补回 preflight 里
-  跟边框、按钮相关的几条规则，否则 Tailwind 的 border-* 工具类不会显示边框，
-  且 <button> 会保留浏览器默认的浅色背景/边框。
+  图标插件。用法是工具类：class="icon-[lucide--play]"（前缀 icon + 双横线分隔图标集）。
+  图标集来自本地的 @iconify-json/lucide，构建时把 SVG 内联成 mask-image，
+  运行时不请求网络、也不需要 JS 组件。
+
+  两个约束：
+  1. 类名必须在源码里逐字出现 —— Tailwind 是扫源码文本的，`icon-[lucide--${name}]` 扫不到。
+  2. 生成的是 <span>（mask + currentColor）而不是 <svg>，默认 1em 见方。
+     所以 shadcn 组件里那些 [&_svg] 选择器命不中它，见 components/ui/icon.tsx。
 */
-@layer base {
-  *,
-  ::before,
-  ::after {
-    box-sizing: border-box;
-    border-width: 0;
-    border-style: solid;
-    border-color: currentColor;
-  }
+@plugin "@iconify/tailwind4";
 
-  ::before,
-  ::after {
-    --tw-content: '';
-  }
+/*
+  shadcn 组件里的 dark: 变体默认绑定 .dark class，本项目用的是 <html data-theme>
+  （index.html 的首帧脚本与 src/theme/index.tsx 都写这个属性），这里把变体重定向过去。
+  用 :where() 保持 0 特异性，与 Tailwind 工具类的层级模型一致。
 
-  /* 重置按钮默认样式：透明背景、继承字体、去掉原生 appearance，
-     否则折叠/展开等交互按钮会显示浏览器默认的浅色底 */
-  button,
-  input,
-  optgroup,
-  select,
-  textarea {
-    font-family: inherit;
-    font-feature-settings: inherit;
-    font-variation-settings: inherit;
-    font-size: 100%;
-    font-weight: inherit;
-    line-height: inherit;
-    letter-spacing: inherit;
-    color: inherit;
-  }
+  Radix 的 Select / DropdownMenu 内容会 Portal 到 <body>，而 data-theme 挂在 <html>，
+  所以 Portal 出去的浮层同样能命中选择器、也能继承下面的 CSS 变量，无需额外处理。
+*/
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
-  button,
-  [role="button"] {
-    background-color: transparent;
-    background-image: none;
-    border-radius: 0;
-    padding: 0;
-    cursor: pointer;
-    -webkit-appearance: button;
-    appearance: button;
-  }
+/*
+  把 shadcn 的令牌名注册成 Tailwind 工具类（bg-background / border-border / ring-ring …）。
+  inline 表示不再多产出一层 CSS 变量，直接把 var(--x) 内联进工具类定义。
+  右侧的 --background / --primary 等在下面的 [data-theme] 块里定义。
+*/
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 
-  button:focus {
-    outline: 1px dotted;
-    outline-offset: 2px;
-  }
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 /* 主题语义变量：通过 <html data-theme="dark|light"> 切换。
@@ -67,6 +69,7 @@
    不依赖书写顺序。 */
 html {
   color-scheme: light dark;
+  --radius: 0.5rem;
 }
 
 [data-theme='dark'] {
@@ -98,7 +101,27 @@ html {
   --accent-keyword: #c084fc;  /* violet-300 */
   --accent-symbol: #fcd34d;   /* amber-300 */
   --accent-error: #f87171;    /* red-400 */
-  --accent-logo: #38bdf8;     /* sky-400 */
+
+  /* ---- shadcn 令牌：全部指向上面的语义变量，不引入第二套配色 ---- */
+  --background: var(--panel-bg);
+  --foreground: var(--text-primary);
+  --card: var(--panel-bg);
+  --card-foreground: var(--text-primary);
+  --popover: var(--panel-bg);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--accent-number);          /* 原 antd colorPrimary #38bdf8 */
+  --primary-foreground: var(--app-bg);
+  --secondary: var(--panel-hover);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--panel-hover);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--panel-hover);             /* hover 底色，对应原 --panel-hover */
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--accent-error);
+  --destructive-foreground: var(--app-bg);
+  --input: var(--border-strong);
+  --ring: var(--accent-number);
+  /* 注意：--border 已在上面定义过，shadcn 的 border-border 直接复用，不要重复声明 */
 }
 
 [data-theme='light'] {
@@ -126,11 +149,69 @@ html {
   --accent-keyword: #6d28d9;  /* violet-700 */
   --accent-symbol: #d97706;   /* amber-600 */
   --accent-error: #dc2626;    /* red-600 */
-  --accent-logo: #0284c7;     /* sky-600 */
+
+  /* ---- shadcn 令牌：全部指向上面的语义变量，不引入第二套配色 ---- */
+  --background: var(--panel-bg);
+  --foreground: var(--text-primary);
+  --card: var(--panel-bg);
+  --card-foreground: var(--text-primary);
+  --popover: var(--panel-bg);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--accent-number);          /* 原 antd colorPrimary #38bdf8 */
+  --primary-foreground: var(--app-bg);
+  --secondary: var(--panel-hover);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--panel-hover);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--panel-hover);             /* hover 底色，对应原 --panel-hover */
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--accent-error);
+  --destructive-foreground: var(--app-bg);
+  --input: var(--border-strong);
+  --ring: var(--accent-number);
+  /* 注意：--border 已在上面定义过，shadcn 的 border-border 直接复用，不要重复声明 */
 }
 
 /* 全局页面级 reset：根容器填满视口、去掉 body 默认 margin 与白色背景 */
 @layer base {
+  /*
+    默认边框色。Tailwind v3 的 preflight 会把边框色兜底成 gray-200，v4 改成了
+    currentColor，所以 shadcn 组件里那些只写 border（不写 border-xxx）的地方
+    ——SelectContent / DropdownMenuContent / Button 的 outline 变体——边框会跟着
+    文字色走：深色下描出一圈近白，浅色下近黑，和浮层底色反差极大。
+    shadcn 官方 globals.css 正是用 `* { @apply border-border }` 把 v3 的行为加回来，
+    这里等价地写成原生 CSS。放在 base 层，任何显式的 border-xxx 工具类都能压过它。
+
+    只兜边框色、不兜 outline-color：shadcn 原版还有一条 outline-ring/50，但那会把
+    浏览器默认的 :focus-visible 焦点环（outline-color: auto，自带对比度保障）替换成
+    半透明主题色，本项目组件的焦点态都是显式 ring-ring/50，没必要为此削弱可访问性。
+  */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--border);
+  }
+
+  /*
+    可点元素的手型光标。
+
+    Tailwind v3 的 preflight 里有一条 `button, [role=button] { cursor: pointer }`，
+    v4 把它删了、改成跟浏览器默认走 —— 而 <button> 的默认是 cursor: default（箭头）。
+    所以迁到 v4 之后，工具栏上的「保存 / 停止 / Run」这些按钮悬停时光标毫无变化，
+    看不出它们能点。这里把 v3 的行为加回来（v4 升级指南给的也是这一段）。
+
+    禁用态排除在外：箭头本身就是「现在点不了」的信号，「下载 / 停止」在没东西可跑时
+    正是这个状态（它们还带着 disabled:pointer-events-none，本来也收不到 hover）。
+    菜单项不受影响 —— shadcn 给它们显式写了 cursor-default（原生菜单的习惯），
+    utilities 层排在 base 层后面，压得过这条。
+  */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
   html,
   body {
     height: 100%;

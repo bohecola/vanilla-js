@@ -27,6 +27,34 @@ self.MonacoEnvironment = {
   }
 }
 
+/*
+  编辑器现在同时打开多个文件（每个文件一个 model），这会踩到 TS 语言服务的一个默认行为：
+  没有顶层 import/export 的文件被当成「全局脚本」，所有这类文件共享同一个作用域。
+  于是同时打开两个各自写着 `const fn = ...` 的 TS 文件时，两边会互相报
+  「Cannot redeclare block-scoped variable」——代码没问题，报错纯属误伤。
+  （.js model 暂时看不到这个误报：monaco 的 javascriptDefaults 默认关掉了语义诊断。
+  但语言服务两边共用一套文件表，选项还是一起设，省得哪天打开 checkJs 又冒出来。）
+
+  moduleDetection: Force 让每个文件都被视作模块，各自独立作用域，误报消失。
+  用 merge 而不是整体替换：语言服务的默认值里还有一堆 lib / 诊断相关配置，
+  替换掉会连带丢掉那些。
+*/
+const SHARED_COMPILER_OPTIONS: monaco.typescript.CompilerOptions = {
+  // 3 = ModuleDetectionKind.Force。monaco 的类型定义里没有这个枚举（它比 TS 里
+  // 加入 moduleDetection 的时间早），但选项本身会原样传给 ts.worker，写数字即可。
+  moduleDetection: 3,
+  module: monaco.typescript.ModuleKind.ESNext,
+  // 用 ESNext 而不是 ES2022：monaco 的 ScriptTarget 枚举停在 ES2020，
+  // 这里只影响补全和诊断，取最新一档不会比运行时（esbuild target es2022）更严。
+  target: monaco.typescript.ScriptTarget.ESNext,
+  // model 的 URI 是 inmemory://…，没有 .ts/.js 后缀也要能被语言服务接受
+  allowNonTsExtensions: true,
+}
+
+for (const defaults of [monaco.typescript.javascriptDefaults, monaco.typescript.typescriptDefaults]) {
+  defaults.setCompilerOptions({ ...defaults.getCompilerOptions(), ...SHARED_COMPILER_OPTIONS })
+}
+
 // 自定义「高对比浅色」主题：默认 vs 浅色主题对部分人偏淡，
 // 这里加深深色文字、注释、token 色彩并明确光标，提升可读性。
 monaco.editor.defineTheme('playground-light', {

@@ -25,4 +25,20 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // shadcn/ui 生成的组件按惯例会同时导出组件与 cva variants，
+    // 这不影响实际使用（这些文件不参与 HMR 边界），关掉该规则即可。
+    files: ['src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  {
+    // theme/index.tsx 同时导出 ThemeProvider（组件）与 useTheme（函数），
+    // 属既有结构（迁移文档要求该文件不改动），关闭该规则以免误报。
+    files: ['src/theme/index.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 )

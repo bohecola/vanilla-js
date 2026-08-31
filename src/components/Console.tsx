@@ -1,4 +1,5 @@
 ﻿import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react'
+import { useI18n } from '@/i18n/context'
 import type { ConsoleMessage, LogLevel } from '../types'
 import Inspector from './Inspector'
 
@@ -33,6 +34,7 @@ function renderArgs(args: unknown[], key: string) {
 }
 
 export default forwardRef<ConsoleHandle>(function Console(_props, ref) {
+  const { t } = useI18n()
   const [logs, setLogs] = useState<ConsoleMessage[]>([])
   const idRef = useRef(0)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -88,11 +90,13 @@ export default forwardRef<ConsoleHandle>(function Console(_props, ref) {
   return (
     <div ref={containerRef} className="h-full overflow-auto bg-[var(--panel-bg)] px-2 py-1 font-mono text-[12px] leading-5">
       {logs.length === 0 ? (
-        <div className="mt-1 text-[var(--text-faint)]">// console 输出会显示在这里</div>
+        <div className="mt-1 text-[var(--text-faint)]">{t('console.empty')}</div>
       ) : (
         logs.map((log) => {
           const meta = LEVEL_META[log.type]
-          const time = new Date(log.timestamp).toLocaleTimeString('zh-CN', {
+          // 时间戳的格式跟着界面语言走（中文 24 小时制、英文也用 24 小时制，
+          // 差别在分隔符与前导零，交给 Intl 按 locale 决定）
+          const time = new Date(log.timestamp).toLocaleTimeString(t('locale.bcp47'), {
             hour12: false,
             hour: '2-digit',
             minute: '2-digit',
