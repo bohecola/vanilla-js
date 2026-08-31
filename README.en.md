@@ -6,12 +6,13 @@
 
 ## Features
 
-- **Instant execution** — Code runs in a dedicated Web Worker, so the UI stays responsive; top-level `await` works and `while (true)` loops can be stopped with one click.
-- **Monaco editor** — The same editor that powers VS Code, with syntax highlighting, autocompletion, and TypeScript type checking.
-- **Local file system** — Open a local folder via the browser's File System Access API, browse the directory tree in the sidebar, edit/save/rename/delete files, or import and download individual files.
-- **Built-in demos** — A set of ready-to-run examples; save them all to a local folder with one click to modify.
-- **Bilingual UI** — English and Chinese, following the system language by default and switchable from the top bar.
-- **Three-state theme** — Dark, light, or system-following, with no flash on first load.
+| Feature | Description |
+| --- | --- |
+| Instant execution | Code runs in a dedicated Web Worker, so the UI stays responsive; top-level `await` works and `while (true)` loops can be stopped with one click. |
+| Monaco editor | The same editor that powers VS Code, with syntax highlighting, autocompletion, and TypeScript type checking. |
+| Local file system | Open a local folder via the browser's File System Access API, browse the directory tree in the sidebar, edit/save/rename/delete files, or import and download individual files. |
+| Built-in demos | A set of ready-to-run examples; save them all to a local folder with one click to modify. |
+| Bilingual UI | English and Chinese, following the system language by default and switchable from the top bar. |
 
 > Note: Jotter is a code scratchpad — it runs JavaScript / TypeScript and shows console output. It is **not** an HTML / CSS live preview tool.
 
