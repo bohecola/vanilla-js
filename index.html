@@ -28,9 +28,32 @@
         }
         document.documentElement.setAttribute('data-theme', theme)
       })()
+
+      /*
+        同理，首帧之前定下语言：<html lang> 与标题在 React 挂载前就已经被读走（浏览器
+        标签页、辅助技术、拼写检查都看它们），英文用户不该先看到一帧中文标题。
+
+        标题的两句字面量在这里和 src/i18n/dict.zh.ts / dict.en.ts 各存一份 —— 首帧脚本
+        必须是内联的，没法 import 字典。改标题要改三处。
+        键名与三态的解析规则需与 src/i18n/context.ts 的 STORAGE_KEY / readLangMode /
+        systemLang 保持一致。
+      */
+      ;(function () {
+        var mode = 'system'
+        try {
+          var saved = localStorage.getItem('jotter:lang')
+          if (saved === 'zh' || saved === 'en' || saved === 'system') mode = saved
+        } catch (e) {
+          /* 隐私模式下 localStorage 可能抛错，退回跟随系统 */
+        }
+        var lang = mode === 'system' ? (/^zh/i.test(navigator.language || '') ? 'zh' : 'en') : mode
+        document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en'
+        document.title =
+          lang === 'zh' ? 'Jotter · JS / TS 代码草稿纸' : 'Jotter · JS / TS scratchpad'
+      })()
     </script>
-    <script type="module" crossorigin src="./assets/index-OXBIogGj.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-mWTVk2H9.css">
+    <script type="module" crossorigin src="./assets/index-CKSTPPKo.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-vh_rQMhs.css">
   </head>
   <body>
     <div id="root"></div>
