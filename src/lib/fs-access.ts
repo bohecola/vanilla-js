@@ -283,6 +283,40 @@ export async function writeTextFile(
   return (await handle.getFile()).lastModified
 }
 
+/**
+ * 每个文件切块写入，并报告字节级进度。返回写进去的字节数。
+ *
+ * write() 整串一次写入拿不到中间进度；改用 File System Access 的分块写法
+ * `{ type: 'write', position, data }`，按固定块大小切片，位置跟着字节偏移走，
+ * 每写完一块就把「已经写进去多少字节」报给调用方。切块按字节走，所以得先
+ * TextEncoder 成 Uint8Array —— 否则按字符 slice 会和 UTF-8 字节数对不上，
+ * 进度条就会算错。只有真正写到磁盘的字节才算数，多字节字符不会被劈成两半。
+ */
+export async function writeTextFileWithProgress(
+  handle: FileSystemFileHandle,
+  text: string,
+  onBytes?: (writtenBytes: number, totalBytes: number) => void
+): Promise<number> {
+  const bytes = new TextEncoder().encode(text)
+  const CHUNK = 4 * 1024 // 4 KB，demo 这种小文件也能走出好几格进度
+  const writable = await handle.createWritable()
+  try {
+    let written = 0
+    for (let offset = 0; offset < bytes.length; offset += CHUNK) {
+      const end = Math.min(offset + CHUNK, bytes.length)
+      await writable.write({ type: 'write', position: offset, data: bytes.subarray(offset, end) })
+      written = end
+      onBytes?.(written, bytes.length)
+    }
+  } catch (err) {
+    // 出错时也要关掉流，否则文件会一直被锁着
+    await writable.abort().catch(() => {})
+    throw err
+  }
+  await writable.close()
+  return bytes.length
+}
+
 /** 取当前 mtime，用来判断磁盘上的文件是否被外部程序改过。 */
 export async function getLastModified(handle: FileSystemFileHandle): Promise<number> {
   return (await handle.getFile()).lastModified
@@ -432,11 +466,60 @@ export interface BundleFile {
  * 串行写而不是 Promise.all：同一个子目录会被多次 getDirectoryHandle(create)，
  * 并发下去等于让浏览器自己去解决同时建同一个目录的竞态，没必要冒这个险。
  */
+export interface WriteProgress {
+  /** 正在写入的文件相对路径（`overrides/call.js`） */
+  file: string
+  /** 已经写完的文件数（不含当前这个） */
+  doneFiles: number
+  totalFiles: number
+  /** 已写入磁盘的总字节数（含已完成文件 + 当前文件已写部分） */
+  writtenBytes: number
+  totalBytes: number
+}
+
+/**
+ * 把一组文件写进 dir，路径里的斜杠按层建目录。
+ *
+ * 刻意不走 createFile / createDirectory：它们每次都要先探一遍同名条目，而调用方给的
+ * dir 是刚建出来的空目录（见 createDirectoryUnique），那道探测纯属白跑 I/O；
+ * 子目录更是本来就该「有则复用」—— `overrides/` 下面有五个文件，只该建一次。
+ *
+ * 串行写而不是 Promise.all：同一个子目录会被多次 getDirectoryHandle(create)，
+ * 并发下去等于让浏览器自己去解决同时建同一个目录的竞态，没必要冒这个险。
+ *
+ * onProgress 在每次写完一个块 / 一个文件时回调一次，携带文件级与字节级的双重进度。
+ * shouldCancel 在写每个文件前检查一次，返回 true 就抛一个「已取消」错误，中断写入。
+ */
+export interface WriteFilesOptions {
+  onProgress?: (p: WriteProgress) => void
+  /** 每个文件开写前检查一次；返回 true 即取消本次写入 */
+  shouldCancel?: () => boolean
+}
+
 export async function writeFilesInto(
   dir: FileSystemDirectoryHandle,
-  files: BundleFile[]
+  files: BundleFile[],
+  opts?: WriteFilesOptions
 ): Promise<void> {
-  for (const file of files) {
+  const { onProgress, shouldCancel } = opts ?? {}
+  // 一开始就把总字节数算好：进度条分母需要它，而且各文件字节数在写的过程中不变
+  const totalBytes = files.reduce((sum, file) => sum + new Blob([file.content]).size, 0)
+  let writtenBytes = 0
+  // 进入写入阶段立刻报一次 0%：让进度面板在「选完文件夹、真正开始落盘」这一刻才亮起，
+  // 而不是在弹文件夹选择框的时候就显示。file 用第一个文件的路径占位。
+  if (onProgress && files.length > 0) {
+    onProgress({
+      file: files[0].path,
+      doneFiles: 0,
+      totalFiles: files.length,
+      writtenBytes: 0,
+      totalBytes,
+    })
+  }
+  for (let i = 0; i < files.length; i++) {
+    // 用户取消了就中断，不再写后面的文件。当前这一块可能已经写完，交给调用方清理残留
+    if (shouldCancel?.()) throw new AppError('err.save.cancelled')
+    const file = files[i]
     const segments = file.path.split('/')
     const name = segments.pop()
     if (!name) throw new AppError('err.fs.badBundlePath', { path: file.path })
@@ -444,7 +527,25 @@ export async function writeFilesInto(
     for (const segment of segments) {
       current = await current.getDirectoryHandle(segment, { create: true })
     }
-    await writeTextFile(await current.getFileHandle(name, { create: true }), file.content)
+    const handle = await current.getFileHandle(name, { create: true })
+    const fileBytes = await writeTextFileWithProgress(handle, file.content, (written) =>
+      // 当前文件写了几字节 + 之前已写完文件的总字节，就是全局累计写入量
+      onProgress?.({
+        file: file.path,
+        doneFiles: i,
+        totalFiles: files.length,
+        writtenBytes: writtenBytes + written,
+        totalBytes,
+      })
+    )
+    writtenBytes += fileBytes
+    onProgress?.({
+      file: file.path,
+      doneFiles: i + 1,
+      totalFiles: files.length,
+      writtenBytes,
+      totalBytes,
+    })
   }
 }
 

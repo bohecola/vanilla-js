@@ -26,6 +26,7 @@ import {
   type Entry,
   type Listing,
   type TreeSize,
+  type WriteProgress,
 } from '@/lib/fs-access'
 
 /*
@@ -139,12 +140,41 @@ async function readStoredRoots(): Promise<StoredRoot[]> {
 }
 
 /** 「把一整套文件导出到本地」的结果，用来拼提示文案。 */
+/** 「把全部 Demo 存到本地」写进 IndexedDB 的进行中记录。刷新后据此提示上次没存完。 */
+export interface InterruptedSave {
+  /** 父目录 handle。清理时用它删残留目录；权限不够时需要用户重新授权 */
+  parent: FileSystemDirectoryHandle
+  /** 实际创建出来的目录名（可能带了 -2 之类编号） */
+  dirName: string
+  /** 可读路径（`文件夹名/总目录名`） */
+  label: string
+  doneFiles: number
+  totalFiles: number
+}
+/** 进行中记录的键。保存完成会删掉，中途刷新/失败会留下，下次打开能发现。 */
+export const DEMO_SAVE_KEY = 'jotter:interruptedDemoSave'
+/**
+ * sessionStorage 里的「正在保存」标记。IndexedDB 记录虽然可靠，但写入事务提交和
+ * 刷新之间仍存在极小竞态窗口；这个同步标记能保证同标签页刷新后第一次加载就读到。
+ */
+export const DEMO_SAVING_KEY = 'jotter:saving'
+
 export interface BundleResult {
   /** 总目录的路径（`<根 id>/<目录名>`）。它已经被展开并设为新建目标了 */
   path: string
   /** 提示文案里用的可读路径（`文件夹名/总目录名`） */
   label: string
   count: number
+  /** 是否把选中的文件夹接管成了左侧的根目录。false 表示用户拒绝在左侧打开 */
+  opened: boolean
+}
+
+/** 主动在已打开的目录里检测到的「上次没存完」残留。 */
+export interface ResidualDemo {
+  /** 可读路径（`父文件夹/jotter-demos`） */
+  label: string
+  /** 残留目录名（如 `jotter-demos`），用于删除 */
+  dirName: string
 }
 
 export interface Workspace {
@@ -177,7 +207,18 @@ export interface Workspace {
    * 让用户挑一个文件夹，把 files 整套写进它下面的一个新建子目录 dirName（撞名自动编号），
    * 然后把那个文件夹接管成根。取消和失败都返回 null（失败原因已写进 error）。
    */
-  saveBundle: (dirName: string, files: BundleFile[]) => Promise<BundleResult | null>
+  saveBundle: (
+    dirName: string,
+    files: BundleFile[],
+    opts?: {
+      /** 落盘后是否把选中的文件夹接管成左侧根目录（用户确认才做） */
+      onOpen?: (info: { label: string; count: number }) => Promise<boolean>
+      /** 写入进度（字节级 + 文件级） */
+      onProgress?: (p: WriteProgress) => void
+      /** 每个文件写前检查一次，返回 true 即取消本次写入并清理已写残留 */
+      shouldCancel?: () => boolean
+    }
+  ) => Promise<BundleResult | null>
   restore: (id: string) => Promise<void>
   forget: (id: string) => void
   toggle: (dir: DirEntry) => Promise<void>
@@ -199,6 +240,11 @@ export interface Workspace {
   deleteEntry: (entry: Entry) => Promise<boolean>
   /** 改名。成功返回改名后的条目，失败返回 null（原因已写进 error）。 */
   renameEntry: (entry: Entry, name: string) => Promise<Entry | null>
+  /**
+   * 在一个已授权的根目录里，主动找「上次没存完」的 demo 残留（含 .crswap 交换文件的
+   * jotter-demos* 目录）。不依赖 IndexedDB 记录，直接看磁盘。
+   */
+  detectResidualDemos: (root: WorkspaceRoot) => Promise<ResidualDemo[]>
   /** 按路径找回文件 handle：重开页面恢复上次打开的文件时，手里只有一个字符串 */
   resolveFilePath: (path: string) => Promise<FileSystemFileHandle | null>
 }
@@ -544,7 +590,17 @@ export function useWorkspace(): Workspace {
     还得自己再「打开文件夹」把刚写出来的东西找回来。
   */
   const saveBundle = useCallback(
-    async (dirName: string, files: BundleFile[]): Promise<BundleResult | null> => {
+    async (
+      dirName: string,
+      files: BundleFile[],
+      opts?: {
+        onOpen?: (info: { label: string; count: number }) => Promise<boolean>
+        onProgress?: (p: WriteProgress) => void
+        /** 每个文件写前检查一次，返回 true 即取消本次写入并清理已写残留 */
+        shouldCancel?: () => boolean
+      }
+    ): Promise<BundleResult | null> => {
+      const { onOpen, onProgress, shouldCancel } = opts ?? {}
       setError(null)
       const parent = await pickDirectory().catch((err) => {
         setError(messageOf(err, tRef.current))
@@ -552,22 +608,87 @@ export function useWorkspace(): Workspace {
       })
       if (!parent) return null // 用户取消（或者选择器自己出错，已经写进 error 了）
       setBusy(true)
+      // dir 声明在 try 外面：取消/出错时要靠它删掉已写的残留目录
+      let dir: FileSystemDirectoryHandle | null = null
+      let label = ''
       try {
-        const dir = await createDirectoryUnique(parent, dirName)
-        await writeFilesInto(dir, files)
+        const d = await createDirectoryUnique(parent, dirName)
+        dir = d
+        label = `${parent.name}/${d.name}`
+        // 从这一刻起，磁盘上已经开始出现不完整的 demo 了。写一条「进行中」记录，
+        // 刷新/失败后下次打开能据此提示「上次没存完」；全部写完再删掉。
+        await idbSet(DEMO_SAVE_KEY, {
+          parent,
+          dirName: d.name,
+          label,
+          doneFiles: 0,
+          totalFiles: files.length,
+        }).catch(() => {})
+        // 同步的「正在保存」标记：比 IndexedDB 事务更早一步能读到的可靠信号
+        try {
+          sessionStorage.setItem(DEMO_SAVING_KEY, '1')
+        } catch {
+          /* sessionStorage 不可用时忽略，IndexedDB 记录仍会兜底 */
+        }
+        const trackProgress = (p: WriteProgress) => {
+          onProgress?.(p)
+          // 记录「进行中」的写入进度。注意：不到 writeFilesInto 全部完成绝不在这一层删记录，
+          // 否则 fire-and-forget 的删除会在「最后一个文件写完」的瞬间抢先把记录清掉，
+          // 恰好又赶在刷新前，刷新后就再也读不到残留记录了。
+          void idbSet(DEMO_SAVE_KEY, {
+            parent,
+            dirName: d.name,
+            label,
+            doneFiles: p.doneFiles,
+            totalFiles: p.totalFiles,
+          }).catch(() => {})
+        }
+        await writeFilesInto(d, files, { onProgress: trackProgress, shouldCancel })
+        // 到这里所有文件都已完整落盘，保存才算真正结束，这时才删掉记录
+        await idbDel(DEMO_SAVE_KEY).catch(() => {})
+        try {
+          sessionStorage.removeItem(DEMO_SAVING_KEY)
+        } catch {
+          /* ignore */
+        }
+        const count = files.length
+        // 落盘是「真的想用它们」的第一步，而把选中的文件夹接管成左侧根目录是会改变
+        // 界面布局的动作，不是用户显式要求就默认别做 —— 先问一句。
+        if (onOpen && !(await onOpen({ label, count }))) {
+          return { path: '', label, count, opened: false }
+        }
         const rootId = await addRoot(parent)
-        const path = `${rootId}/${dir.name}`
+        const path = `${rootId}/${d.name}`
         /*
           这里不能用 expandDir：addRoot 里的 setRoots 还没提交，它读到的 roots 里
-          没有这个根，会当成「不可用」直接返回。反正 dir 的 handle 就在手上，
+          没有这个根，会当成「不可用」直接返回。反正 d 的 handle 就在手上，
           自己列一层最省事，连 resolveDirectory 都不用走。
         */
-        const listing = await listDirectory(dir, path)
+        const listing = await listDirectory(d, path)
         setChildrenByPath((prev) => new Map(prev).set(path, listing))
         setExpanded((prev) => new Set(prev).add(path))
         setTarget(path)
-        return { path, label: `${parent.name}/${dir.name}`, count: files.length }
+        return { path, label, count, opened: true }
       } catch (err) {
+        // 用户取消：把已经写进去的那套不完整文件整个删掉，恢复到保存前的状态
+        if (err instanceof AppError && err.key === 'err.save.cancelled') {
+          await idbDel(DEMO_SAVE_KEY).catch(() => {})
+          try {
+            sessionStorage.removeItem(DEMO_SAVING_KEY)
+          } catch {
+            /* ignore */
+          }
+          if (dir) await removeEntry(parent, dir.name, 'directory').catch(() => {})
+          setError(null)
+          return null
+        }
+        // 其他错误：保留「进行中」记录，下次打开可据此提示清理；也删掉半成品目录
+        try {
+          sessionStorage.removeItem(DEMO_SAVING_KEY)
+        } catch {
+          /* ignore */
+        }
+        if (dir) await removeEntry(parent, dir.name, 'directory').catch(() => {})
         setError(messageOf(err, tRef.current))
         return null
       } finally {
@@ -720,6 +841,32 @@ export function useWorkspace(): Workspace {
     [liveRootOf]
   )
 
+  // 在一个已授权的根目录里找 demo 残留：列根目录顶层，挑出 jotter-demos* 目录，
+  // 再看里面有没有 .crswap（createWritable 写入中断留下的交换文件，完整保存不会有）。
+  const detectResidualDemos = useCallback(
+    async (root: WorkspaceRoot): Promise<ResidualDemo[]> => {
+      if (root.needsPermission) return []
+      try {
+        const top = await listDirectory(root.handle, root.id)
+        const demoDirs = top.entries.filter(
+          (e): e is DirEntry =>
+            e.kind === 'directory' && /^jotter-demos(-[0-9]+)?$/.test(e.name)
+        )
+        const found: ResidualDemo[] = []
+        for (const dir of demoDirs) {
+          const listing = await listDirectory(dir.handle, dir.path)
+          if (listing.entries.some((e) => e.kind === 'file' && e.name.endsWith('.crswap'))) {
+            found.push({ label: `${root.name}/${dir.name}`, dirName: dir.name })
+          }
+        }
+        return found
+      } catch {
+        return []
+      }
+    },
+    []
+  )
+
   return {
     supported,
     ready,
@@ -745,6 +892,7 @@ export function useWorkspace(): Workspace {
     measureDirectory,
     deleteEntry,
     renameEntry,
+    detectResidualDemos,
     resolveFilePath,
   }
 }
