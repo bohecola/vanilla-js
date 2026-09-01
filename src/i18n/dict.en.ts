@@ -64,6 +64,12 @@ export const en: Dict = {
   'editor.stop': 'Stop',
   'editor.runDisabled': 'The runner only executes JavaScript / TypeScript',
 
+  // ---- Status bar ----
+  'statusbar.noFile': 'No file open',
+  'statusbar.file': (p: { name: string }) => p.name,
+  'statusbar.js': 'JavaScript (.js file, runs as JavaScript)',
+  'statusbar.ts': 'TypeScript (.ts file, runs as TypeScript)',
+
   // ---- 确认弹窗 ----
   'confirm.cancel': 'Cancel',
   'confirm.cancelSave.title': 'Stop the save?',

@@ -76,6 +76,12 @@ export const zh = {
   'editor.stop': '停止',
   'editor.runDisabled': '运行器只能执行 JavaScript / TypeScript',
 
+  // ---- 底部状态栏 ----
+  'statusbar.noFile': '未打开文件',
+  'statusbar.file': (p: { name: string }) => p.name,
+  'statusbar.js': 'JavaScript（.js 文件，按 JavaScript 编译运行）',
+  'statusbar.ts': 'TypeScript（.ts 文件，按 TypeScript 编译运行）',
+
   // ---- 确认弹窗 ----
   'confirm.cancel': '取消',
   'confirm.cancelSave.title': '停止保存？',

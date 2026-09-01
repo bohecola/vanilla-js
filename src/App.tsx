@@ -10,7 +10,6 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { GithubMark } from './components/GithubMark'
 import { JotterMark } from './components/JotterMark'
 import Editor, { EditorHandle } from './components/Editor'
@@ -820,15 +819,7 @@ function App() {
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-    // 切语言时重新挂一次监听 —— 只是换个闭包，没有别的副作用
   }, [t])
-
-  function handleLanguageChange(value: string) {
-    // 空值兜底：ToggleGroup 单选模式下再点当前项会传 ''
-    if (!value || !active) return
-    editorRef.current?.setLanguage(active.key, value)
-    setActive({ ...active, language: value })
-  }
 
   // 运行：在 Web Worker 里执行用户代码，主线程不卡，死循环也能用「停止」强制终止。
   // TS 代码会先在主线程用 esbuild 转成 JS（首次需要等 wasm 就绪）。
@@ -872,21 +863,7 @@ function App() {
         )}
 
         <div className="ml-auto flex items-center gap-2">
-          <ToggleGroup
-            type="single"
-            size="sm"
-            spacing={3}
-            value={runnable ? language : ''}
-            disabled={!runnable}
-            onValueChange={handleLanguageChange}
-          >
-            <ToggleGroupItem value="javascript" aria-label="JavaScript" className="px-2.5">
-              JS
-            </ToggleGroupItem>
-            <ToggleGroupItem value="typescript" aria-label="TypeScript" className="px-2.5">
-              TS
-            </ToggleGroupItem>
-          </ToggleGroup>
+          {/* 语言显示移到底部状态栏（见页面底部），右上角不再放语言徽标 */}
 
           {/* 语言。形状与右边的主题下拉完全同构（三态 + 跟随系统）。
               触发器固定用 languages 图标，不随当前值变：「中 / En」没有 sun/moon 那样
@@ -1094,6 +1071,24 @@ function App() {
           </section>
         </main>
       </div>
+
+      {/* 底部状态栏：右侧显示当前文件的语言（同 VS Code 右下角）。
+          语言跟随文件后缀自动判断（.ts→TypeScript、.js→JavaScript）。 */}
+      <footer className="flex shrink-0 items-center gap-3 border-t border-[var(--border)] bg-[var(--panel-bg)] px-4 py-1 text-[11px] text-[var(--text-faint)]">
+        <span className="min-w-0 flex-1 truncate">
+          {active ? t('statusbar.file', { name: active.name }) : t('statusbar.noFile')}
+        </span>
+        {active && (
+          <span
+            className="shrink-0 text-[var(--text-muted)]"
+            title={
+              language === 'typescript' ? t('statusbar.ts') : t('statusbar.js')
+            }
+          >
+            {language === 'typescript' ? 'TypeScript' : 'JavaScript'}
+          </span>
+        )}
+      </footer>
 
       {/* 隐藏的文件选择框，用于「导入」按钮读取本地代码文件（那个按钮只在不支持
           目录 API 的浏览器上出现）。
