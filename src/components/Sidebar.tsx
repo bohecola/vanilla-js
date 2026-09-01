@@ -6,6 +6,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import {
@@ -71,6 +72,50 @@ const padOf = (depth: number) => 8 + depth * INDENT
 const ICON_SLOT = 'flex shrink-0 items-center text-[var(--text-muted)] [&>[data-slot=icon]]:size-3.5'
 
 /**
+ * 平滑推进的进度条。
+ *
+ * 底层的真实进度是异步一步步跳上来的（demo 文件都很小，每个文件通常只报一两次），
+ * 直接拿来渲染会把 50% 一步弹到 70%。这里用 rAF 把「显示的百分比」以固定速度追向
+ * 真实值，看起来就是下载管理器那种连续推进，而不是一格格跳。
+ */
+function SmoothProgressBar({ value }: { value: number }) {
+  const [shown, setShown] = useState(0)
+  const shownRef = useRef(0)
+  // 每次 rAF 最多推进多少个百分点。太快不「平滑」，太慢会显得很拖。
+  const SPEED = 1.2
+
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      const cur = shownRef.current
+      if (Math.abs(value - cur) < 0.01) {
+        shownRef.current = value
+        setShown(value)
+        return
+      }
+      const next =
+        cur < value ? Math.min(cur + SPEED, value) : Math.max(cur - SPEED, value)
+      shownRef.current = next
+      setShown(next)
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [value])
+
+  return (
+    <>
+      <div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--panel-hover)]">
+        <div className="h-full bg-[var(--primary)]/70" style={{ width: `${shown}%` }} />
+      </div>
+      <span className="shrink-0 text-[11px] tabular-nums text-[var(--text-faint)]">
+        {Math.round(shown)}%
+      </span>
+    </>
+  )
+}
+
+/**
  * 内置 Demo 按所在目录分组：路径提到分组标题上，条目里只留文件名。
  *
  * t 是传进来的而不是在函数里取的 —— 这是个纯函数，不是组件，钩子在这里用不了。
@@ -108,8 +153,10 @@ interface RowProps extends React.ComponentProps<'button'> {
   label: string
   active?: boolean
   dirty?: boolean
-  /** 新建的目标目录：用一圈内描边标出，和「当前打开的文件」（实心底色）区分开 */
+  /** 当前打开的文件：用一圈内描边标出，和「新建目标目录」的下划线区分开 */
   selected?: boolean
+  /** 新建的目标目录：用下划线标出。和文件选中环（selected）可以同时存在但不冲突 */
+  targeted?: boolean
   /** 命中忽略名单的目录、以及非文本文件：显示为淡色，但照样可点 */
   dimmed?: boolean
   icon: React.ReactNode
@@ -122,6 +169,7 @@ function Row({
   active,
   dirty,
   selected,
+  targeted,
   dimmed,
   icon,
   className,
@@ -137,7 +185,7 @@ function Row({
       // style（WebkitTouchCallout），直接 {...rest} 会把这里的缩进整个顶掉
       style={{ paddingLeft: padOf(depth), ...style }}
       className={cn(
-        'flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left text-[13px]',
+        'relative flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left text-[13px]',
         'hover:bg-[var(--panel-hover)]',
         active
           ? 'bg-[var(--panel-hover)] font-medium text-[var(--text-primary)]'
@@ -148,6 +196,10 @@ function Row({
       )}
       {...rest}
     >
+      {/* 新建目标目录：左侧竖条。独立元素、不占宽度，圆角也不会把竖条切坏 */}
+      {targeted && (
+        <span className="absolute bottom-1 left-0 top-1 w-[2px] rounded-sm bg-[var(--primary)]" />
+      )}
       <span className={ICON_SLOT}>{icon}</span>
       <span className="truncate font-mono">{label}</span>
       {dirty && (
@@ -172,11 +224,13 @@ function EntryMenu({
   entry,
   onRename,
   onDelete,
+  onCopyPath,
   children,
 }: {
   entry: Entry
   onRename: (entry: Entry) => void
   onDelete: (entry: Entry) => void
+  onCopyPath: (path: string) => void
   children: React.ReactNode
 }) {
   const { t } = useI18n()
@@ -184,14 +238,22 @@ function EntryMenu({
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent
-        className="min-w-[8.5rem]"
+        className="min-w-[10rem]"
         // 菜单关掉时不要把焦点还给那一行：重命名会当场把这一行换成输入框，
         // 焦点被抢回去等于触发输入框的失焦取消，这次改名就没了
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
+        <ContextMenuItem onSelect={() => onCopyPath(entry.path)}>
+          <Icon className="icon-[lucide--copy]" />
+          {t('menu.copyPath')}
+        </ContextMenuItem>
         <ContextMenuItem onSelect={() => onRename(entry)}>
           <Icon className="icon-[codicon--edit]" />
           {t('menu.rename')}
+          {/* 快捷键：macOS 回车、其它平台 F2 */}
+          <ContextMenuShortcut>
+            {/mac/i.test(navigator.platform || navigator.userAgent) ? 'Enter' : 'F2'}
+          </ContextMenuShortcut>
         </ContextMenuItem>
         {/* 图标显式给 text-destructive：菜单项里没写颜色的图标会被统一压成 muted，
             这一项的文字是红的，图标得跟着 */}
@@ -339,11 +401,14 @@ function RootRow({
         }}
         style={{ paddingLeft: padOf(0) }}
         className={cn(
-          'flex min-w-0 flex-1 items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-[13px]',
-          'hover:bg-[var(--panel-hover)]',
-          workspace.target === root.id && 'ring-1 ring-[var(--primary)]/50 ring-inset'
+          'relative flex min-w-0 flex-1 items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-[13px]',
+          'hover:bg-[var(--panel-hover)]'
         )}
       >
+        {/* 新建目标根目录：左侧竖条（与普通目录行一致） */}
+        {workspace.target === root.id && (
+          <span className="absolute bottom-1 left-0 top-1 w-[2px] rounded-sm bg-[var(--primary)]" />
+        )}
         <span className={ICON_SLOT}>
           {locked ? (
             <Icon className="icon-[lucide--lock]" />
@@ -448,6 +513,9 @@ interface TreeProps {
   onOpenFile: (entry: FileEntry) => void
   onRenameEntry: (entry: Entry) => void
   onDeleteEntry: (entry: Entry) => void
+  onCopyPath: (path: string) => void
+  /** 某一行被点击/选中时回调，用于记住「最近操作的是谁」供重命名快捷键用 */
+  onSelectEntry: (entry: Entry) => void
 }
 
 /** 递归渲染一层目录。没有缓存到 childrenByPath 的层不渲染（还没展开过）。 */
@@ -461,6 +529,8 @@ function Tree({
   onOpenFile,
   onRenameEntry,
   onDeleteEntry,
+  onCopyPath,
+  onSelectEntry,
 }: TreeProps) {
   const { t } = useI18n()
   const listing = workspace.childrenByPath.get(path)
@@ -479,12 +549,18 @@ function Tree({
       const open = workspace.expanded.has(entry.path)
       return (
         <li key={entry.path}>
-          <EntryMenu entry={entry} onRename={onRenameEntry} onDelete={onDeleteEntry}>
+          <EntryMenu
+            entry={entry}
+            onRename={onRenameEntry}
+            onDelete={onDeleteEntry}
+            onCopyPath={onCopyPath}
+          >
             <Row
               depth={depth}
               label={entry.name}
               dimmed={entry.ignored}
-              selected={workspace.target === entry.path}
+              // 新建目标目录用下划线标出；和文件选中环（selected）可同时存在、不冲突
+              targeted={workspace.target === entry.path}
               icon={
                 open ? (
                   <Icon className="icon-[lucide--chevron-down]" />
@@ -498,6 +574,7 @@ function Tree({
               onClick={() => {
                 workspace.select(entry.path)
                 void workspace.toggle(entry)
+                onSelectEntry(entry)
               }}
             />
           </EntryMenu>
@@ -512,6 +589,8 @@ function Tree({
               onOpenFile={onOpenFile}
               onRenameEntry={onRenameEntry}
               onDeleteEntry={onDeleteEntry}
+              onCopyPath={onCopyPath}
+              onSelectEntry={onSelectEntry}
             />
           )}
         </li>
@@ -522,11 +601,18 @@ function Tree({
     const language = languageOf(entry.name)
     return (
       <li key={entry.path}>
-        <EntryMenu entry={entry} onRename={onRenameEntry} onDelete={onDeleteEntry}>
+        <EntryMenu
+          entry={entry}
+          onRename={onRenameEntry}
+          onDelete={onDeleteEntry}
+          onCopyPath={onCopyPath}
+        >
           <Row
             depth={depth}
             label={entry.name}
             active={activeKey === key}
+            // 当前打开的文件也和目录一样加一圈选中环，视觉统一
+            selected={activeKey === key}
             dirty={dirtyKeys.has(key)}
             // 认不出后缀的文件点开会被拒（可能是二进制），先在视觉上说明它不一样
             dimmed={language === null}
@@ -537,7 +623,10 @@ function Tree({
                 <Icon className="icon-[lucide--file-code-2]" />
               )
             }
-            onClick={() => onOpenFile(entry)}
+            onClick={() => {
+              onOpenFile(entry)
+              onSelectEntry(entry)
+            }}
           />
         </EntryMenu>
       </li>
@@ -582,9 +671,23 @@ export interface SidebarProps {
   onOpenLocalFile: (entry: FileEntry) => void
   /** 「把全部 Demo 存到本地文件夹」。选文件夹、落盘、接管成根都在 App 那边 */
   onSaveDemos: () => void
+  /** 写入进行中时点「取消」：停止写入并清理已写残留 */
+  onCancelSave: () => void
+  /** 是否正在执行取消（点了确认、在清理残留），用于把取消按钮置灰防重复 */
+  cancelling: boolean
+  /** 正在把 Demo 存到本地的写入进度（文件级 + 字节级）；null 表示当前没有正在进行的保存 */
+  saveProgress: {
+    file: string
+    doneFiles: number
+    totalFiles: number
+    writtenBytes: number
+    totalBytes: number
+  } | null
   /** 右键菜单里的两项。都只作用在树里的项上，根目录行不给（那一行的 × 是「关闭目录」） */
   onRenameEntry: (entry: Entry) => void
   onDeleteEntry: (entry: Entry) => void
+  /** 右键「复制路径」：复制应用内相对路径到剪贴板 */
+  onCopyPath: (path: string) => void
   /** 根目录菜单里的「移除目录」。不动磁盘，但要确认、并且要清掉这棵树里打开过的文件 */
   onCloseRoot: (root: WorkspaceRoot) => void
 }
@@ -599,8 +702,12 @@ export default function Sidebar({
   onOpenTemplate,
   onOpenLocalFile,
   onSaveDemos,
+  onCancelSave,
+  cancelling,
+  saveProgress,
   onRenameEntry,
   onDeleteEntry,
+  onCopyPath,
   onCloseRoot,
 }: SidebarProps) {
   const { t } = useI18n()
@@ -622,6 +729,33 @@ export default function Sidebar({
     }
   })
   const [refreshing, setRefreshing] = useState(false)
+
+  // 最近一次在侧边栏点击的条目（目录或文件）。重命名快捷键（F2 / Mac 回车）作用于它。
+  const selectedEntryRef = useRef<Entry | null>(null)
+  // macOS 上「回车」进入重命名，其它平台回车另有他用，F2 全平台通用
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    (navigator.platform?.toLowerCase().includes('mac') ||
+      navigator.userAgent.toLowerCase().includes('mac'))
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // 输入框聚焦时不响应：重命名框里回车=保存、Escape=取消
+      const el = document.activeElement
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
+      const entry = selectedEntryRef.current
+      if (!entry) return
+      if (e.key === 'F2' || (e.key === 'Enter' && isMac)) {
+        e.preventDefault()
+        onRenameEntry(entry)
+      }
+    }
+    // 用捕获阶段：点文件后焦点进了编辑器，编辑器的 keydown 可能在冒泡阶段 stopPropagation，
+    // 冒泡阶段的 window 监听就收不到 F2 了。捕获阶段先于编辑器触发，最稳。
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [isMac, onRenameEntry])
+
   useEffect(() => {
     try {
       localStorage.setItem(WIDTH_KEY, String(width))
@@ -829,6 +963,10 @@ export default function Sidebar({
                     onOpenFile={onOpenLocalFile}
                     onRenameEntry={onRenameEntry}
                     onDeleteEntry={onDeleteEntry}
+                    onCopyPath={onCopyPath}
+                    onSelectEntry={(entry) => {
+                      selectedEntryRef.current = entry
+                    }}
                   />
                 )}
               </div>
@@ -843,7 +981,49 @@ export default function Sidebar({
           </>
         )}
 
-        {workspace.busy && (
+        {saveProgress && (
+          <div className="mx-2 mb-2 mt-2 flex flex-col gap-1.5 rounded-md border border-[var(--border)] bg-[var(--panel-bg)] px-2 py-1.5">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-[12px] leading-snug text-[var(--text-faint)]">
+                {saveProgress.file
+                  ? t('sidebar.savingDemosFile', {
+                      name: saveProgress.file.slice(saveProgress.file.lastIndexOf('/') + 1),
+                      done: saveProgress.doneFiles,
+                      total: saveProgress.totalFiles,
+                    })
+                  : t('sidebar.savingDemos', {
+                      done: saveProgress.doneFiles,
+                      total: saveProgress.totalFiles,
+                    })}
+              </span>
+              <button
+                type="button"
+                onClick={onCancelSave}
+                disabled={cancelling}
+                title={cancelling ? t('sidebar.cancellingSave') : t('sidebar.cancelSave')}
+                aria-label={cancelling ? t('sidebar.cancellingSave') : t('sidebar.cancelSave')}
+                className="flex shrink-0 items-center gap-0.5 text-[var(--text-muted)] hover:text-[var(--text-body)] disabled:pointer-events-none disabled:opacity-60"
+              >
+                <Icon
+                  className={`size-3.5 ${cancelling ? 'icon-[lucide--loader-circle] animate-spin' : 'icon-[lucide--x]'}`}
+                />
+                {cancelling && (
+                  <span className="text-[11px] text-[var(--text-faint)]">{t('sidebar.cancellingSave')}</span>
+                )}
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <SmoothProgressBar
+                value={
+                  saveProgress.totalBytes > 0
+                    ? (saveProgress.writtenBytes / saveProgress.totalBytes) * 100
+                    : 0
+                }
+              />
+            </div>
+          </div>
+        )}
+        {workspace.busy && !saveProgress && (
           <p className="px-2 py-1 text-[12px] text-[var(--text-faint)]">{t('sidebar.loading')}</p>
         )}
 
@@ -898,6 +1078,8 @@ export default function Sidebar({
               aria-label={t('sidebar.saveDemos')}
               className="text-[var(--text-muted)]"
               onClick={onSaveDemos}
+              // 正在写入时禁用：重复触发会并发写、弹多个确认框、生成重复目录
+              disabled={saveProgress !== null}
             >
               <Icon className="icon-[codicon--desktop-download] size-3.5" />
             </Button>
@@ -916,6 +1098,7 @@ export default function Sidebar({
                         depth={1}
                         label={item.label}
                         active={activeKey === key}
+                        selected={activeKey === key}
                         dirty={dirtyKeys.has(key)}
                         icon={<Icon className="icon-[lucide--file-code-2]" />}
                         onClick={() => onOpenTemplate(item.path)}
@@ -927,6 +1110,20 @@ export default function Sidebar({
             </div>
           ))}
       </div>
+
+      {/* 当前目标目录的可读路径。浏览器拿不到真实绝对路径，只能展示应用内相对路径，
+         但足以让用户知道它在哪个根目录下 */}
+      {workspace.hasRoot && targetLabel && (
+        <div className="flex items-center gap-1 border-t border-[var(--border)] px-2 py-1">
+          <Icon className="icon-[lucide--folder] size-3 shrink-0 text-[var(--text-faint)]" />
+          <span
+            className="truncate text-[11px] text-[var(--text-faint)]"
+            title={t('sidebar.currentPath', { path: targetLabel })}
+          >
+            {targetLabel}
+          </span>
+        </div>
+      )}
 
       {/* 拖拽把手：视觉上只有 1px 的边框，命中区域放宽到 5px */}
       <div
