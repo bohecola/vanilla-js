@@ -128,22 +128,18 @@ function DropdownMenuRadioItem({
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
       className={cn(
-        "relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_[data-slot=icon]:not([class*='size-'])]:size-4",
+        "relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-2 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_[data-slot=icon]:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
     >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
+      {children}
+      {/* 选中对号放右侧，比左侧的圆点干净、专业 */}
+      <span className="pointer-events-none ml-auto flex size-3.5 items-center justify-center">
         <DropdownMenuPrimitive.ItemIndicator>
-          {/* 选中点是个实心圆。lucide 的 circle 是描边的空心圈，做成 mask 之后
-              原来那句 fill-current 也失效了，直接用一个圆角方块更省事。
-              block 是必须的：ItemIndicator 自己是个 inline 的 <span>，
-              里面这个点如果也是 inline，size-2 就落不下来（宽高对 inline 无效），
-              渲染出来是个 0×0 的空盒子 */}
-          <span className="block size-2 rounded-full bg-current" />
+          <Icon className="icon-[lucide--check] size-4" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
-      {children}
     </DropdownMenuPrimitive.RadioItem>
   )
 }

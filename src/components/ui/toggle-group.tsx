@@ -36,7 +36,9 @@ function ToggleGroup({
       data-spacing={spacing}
       style={{ "--gap": spacing } as React.CSSProperties}
       className={cn(
-        "group/toggle-group flex w-fit items-center gap-[--spacing(var(--gap))] rounded-md data-[spacing=default]:data-[variant=outline]:shadow-xs",
+        "group/toggle-group flex w-fit items-center gap-[--spacing(var(--gap))] rounded-md",
+        // 凹陷容器：分段控制器的「壳」。给一点内边距和内阴影，让选中块看起来是浮在里面的
+        "border border-[var(--border)]/60 bg-[var(--panel-hover)] p-0.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.08)]",
         className
       )}
       {...props}
@@ -69,8 +71,9 @@ function ToggleGroupItem({
           variant: context.variant || variant,
           size: context.size || size,
         }),
-        "w-auto min-w-0 shrink-0 px-3 focus:z-10 focus-visible:z-10",
-        "data-[spacing=0]:rounded-none data-[spacing=0]:shadow-none data-[spacing=0]:first:rounded-l-md data-[spacing=0]:last:rounded-r-md data-[spacing=0]:data-[variant=outline]:border-l-0 data-[spacing=0]:data-[variant=outline]:first:border-l",
+        "w-auto min-w-0 shrink-0 rounded-md px-3 focus:z-10 focus-visible:z-10",
+        // 选中块浮起来：主色底 + 同色文字 + 投影，形成「凹陷壳里的浮块」质感
+        "data-[state=on]:bg-[var(--primary)] data-[state=on]:text-[var(--primary-foreground)] data-[state=on]:shadow-sm",
         className
       )}
       {...props}
