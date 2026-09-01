@@ -37,6 +37,13 @@ export const en: Dict = {
   'notice.demoReadFailed': (p) => `Failed to read the demo sources: ${p.message}`,
   'notice.demosSaved': (p) =>
     `Saved ${p.count} demo${p.count === 1 ? '' : 's'} to ${p.label}. You can edit them now — Ctrl+S writes back to disk.`,
+  'notice.demosSavedClosed': (p) =>
+    `Saved ${p.count} demo${p.count === 1 ? '' : 's'} to ${p.label}; not opened on the left. To edit them here, use "Open folder" on that directory.`,
+  'notice.demoSaveCleaned': (p) =>
+    `Cleaned up ${p.count} incomplete demo folder${p.count === 1 ? '' : 's'} left from a previous save`,
+  'notice.demoSaveGone': 'The incomplete folder from the previous save is already gone; nothing to clean up',
+  'notice.pathCopied': (p: { path: string }) => `Copied path: ${p.path}`,
+  'notice.copyFailed': 'Copy failed, please try again',
   'notice.fileReadFailed': (p) => `Failed to read the file: ${p.message}`,
   'notice.draftWillSaveTo': (p) =>
     `Type a file name on the left and press Enter to save it to ${p.path}`,
@@ -52,12 +59,31 @@ export const en: Dict = {
   'editor.noFile': 'No file open',
   'editor.dirty': 'Unsaved changes',
   'editor.save': 'Save',
+  'editor.saving': 'Saving…',
   'editor.download': 'Download',
   'editor.stop': 'Stop',
   'editor.runDisabled': 'The runner only executes JavaScript / TypeScript',
 
   // ---- 确认弹窗 ----
   'confirm.cancel': 'Cancel',
+  'confirm.cancelSave.title': 'Stop the save?',
+  'confirm.cancelSave.body':
+    'Writing will stop and the incomplete files already written will be deleted, restoring to before the save.',
+  'confirm.cancelSave.ok': 'Stop save',
+  'confirm.cleanupInterrupted.title': 'Clean up an incomplete save?',
+  'confirm.cleanupInterrupted.bodyMultiple': (p) =>
+    `Incomplete files from an interrupted save were found in ${p.labels}. Delete them?`,
+  'confirm.cleanupInterrupted.bodyRecord': (p) =>
+    `A previous save was interrupted (page refresh or close); incomplete files were left in ${p.label}. Delete them?`,
+  'confirm.cleanupInterrupted.ok': 'Clean up',
+  'confirm.saveDemos.title': 'Save all demos locally?',
+  'confirm.saveDemos.body': (p) =>
+    `All ${p.count} demo${p.count === 1 ? '' : 's'} will be saved into the folder you pick, creating a subfolder there. Continue?`,
+  'confirm.saveDemos.ok': 'Choose folder',
+  'confirm.openDemos.title': 'Open the saved folder on the left?',
+  'confirm.openDemos.body': (p) =>
+    `Saved ${p.count} demo${p.count === 1 ? '' : 's'} to ${p.label}. Open this folder in the file panel on the left to edit them?`,
+  'confirm.openDemos.ok': 'Open',
   'confirm.delete.title': (p) => `Delete ${p.name}?`,
   'confirm.delete.dir': (p) => `This will delete ${p.path} and everything inside it.`,
   'confirm.delete.file': (p) => `This will delete ${p.path}.`,
@@ -116,11 +142,17 @@ export const en: Dict = {
   'sidebar.demos': 'Demo snippets',
   'sidebar.demosDirty': 'Unsaved demo changes',
   'sidebar.saveDemos': 'Save every demo to a local folder',
+  'sidebar.cancelSave': 'Cancel save',
+  'sidebar.cancellingSave': 'Cancelling…',
+  'sidebar.savingDemos': (p) => `Saving to local ${p.done}/${p.total}`,
+  'sidebar.savingDemosFile': (p) => `Writing ${p.name} (${p.done}/${p.total})`,
   'sidebar.uncategorized': 'Uncategorized',
 
   // ---- 右键 / 下拉菜单 ----
   'menu.rename': 'Rename',
   'menu.delete': 'Delete',
+  'menu.copyPath': 'Copy path',
+  'sidebar.currentPath': (p: { path: string }) => `Current folder: ${p.path}`,
   'menu.newFile': 'New file',
   'menu.newDir': 'New folder',
   'menu.refresh': 'Refresh',
@@ -188,6 +220,7 @@ export const en: Dict = {
     `The runner is a Web Worker with no module resolver — inline the dependency into the same file before running.`,
 
   // ---- 工作区 ----
+  'err.save.cancelled': 'Save cancelled',
   'err.ws.rootMoved': (p) =>
     `The folder ${p.name} is no longer where it was, so it has been taken off the list`,
   'err.ws.permissionDenied': (p) =>

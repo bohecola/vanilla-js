@@ -50,6 +50,13 @@ export const zh = {
   'notice.demoReadFailed': (p: { message: string }) => `读取 Demo 源码失败：${p.message}`,
   'notice.demosSaved': (p: { count: number; label: string }) =>
     `已把 ${p.count} 个 Demo 存到 ${p.label}，现在可以直接改，Ctrl+S 写回磁盘`,
+  'notice.demosSavedClosed': (p: { count: number; label: string }) =>
+    `已把 ${p.count} 个 Demo 存到 ${p.label}，未在左侧打开。如需在应用内编辑，可用「打开文件夹」打开该目录`,
+  'notice.demoSaveCleaned': (p: { count: number }) =>
+    `已清理 ${p.count} 处上次未完成的 Demo 残留`,
+  'notice.demoSaveGone': '上次未完成的残留目录已不存在，无需清理',
+  'notice.pathCopied': (p: { path: string }) => `已复制路径：${p.path}`,
+  'notice.copyFailed': '复制失败，请重试',
   'notice.fileReadFailed': (p: { message: string }) => `读取文件失败：${p.message}`,
   'notice.draftWillSaveTo': (p: { path: string }) => `在左侧输入文件名并回车后，将保存到 ${p.path}`,
   'notice.noWriteTarget': '该文件不在本地目录中，没有可写回的位置，已改为下载',
@@ -64,12 +71,30 @@ export const zh = {
   'editor.noFile': '未打开文件',
   'editor.dirty': '有未保存的修改',
   'editor.save': '保存',
+  'editor.saving': '保存中…',
   'editor.download': '下载',
   'editor.stop': '停止',
   'editor.runDisabled': '运行器只能执行 JavaScript / TypeScript',
 
   // ---- 确认弹窗 ----
   'confirm.cancel': '取消',
+  'confirm.cancelSave.title': '停止保存？',
+  'confirm.cancelSave.body': '将停止写入，并删除已写入的不完整文件，恢复到保存前的状态。',
+  'confirm.cancelSave.ok': '停止保存',
+  'confirm.cleanupInterrupted.title': '清理上次未完成的保存？',
+  'confirm.cleanupInterrupted.bodyMultiple': (p: { labels: string }) =>
+    `检测到 ${p.labels} 里有上次保存未完成（可能刷新或关闭页面）留下的不完整文件。是否删除它们？`,
+  'confirm.cleanupInterrupted.bodyRecord': (p: { label: string }) =>
+    `上次保存未完成（可能刷新或关闭了页面），${p.label} 里留下了不完整的文件。是否删除它们？`,
+  'confirm.cleanupInterrupted.ok': '清理',
+  'confirm.saveDemos.title': '保存全部 Demo 到本地？',
+  'confirm.saveDemos.body': (p: { count: number }) =>
+    `将把全部 ${p.count} 个 Demo 保存到你选择的文件夹，并在其中创建子目录。继续吗？`,
+  'confirm.saveDemos.ok': '选择文件夹',
+  'confirm.openDemos.title': '在左侧打开保存的文件夹？',
+  'confirm.openDemos.body': (p: { count: number; label: string }) =>
+    `已把 ${p.count} 个 Demo 存到 ${p.label}。是否在左侧文件栏中打开这个文件夹，方便直接编辑？`,
+  'confirm.openDemos.ok': '打开',
   'confirm.delete.title': (p: { name: string }) => `删除 ${p.name}？`,
   'confirm.delete.dir': (p: { path: string }) => `将删除 ${p.path} 及其全部内容。`,
   'confirm.delete.file': (p: { path: string }) => `将删除 ${p.path}。`,
@@ -128,10 +153,18 @@ export const zh = {
   'sidebar.demos': 'Demo 片段',
   'sidebar.demosDirty': '有未保存的 Demo',
   'sidebar.saveDemos': '把全部 Demo 存到本地文件夹',
+  'sidebar.cancelSave': '取消保存',
+  'sidebar.cancellingSave': '正在取消…',
+  'sidebar.savingDemos': (p: { done: number; total: number }) =>
+    `正在保存到本地 ${p.done}/${p.total}`,
+  'sidebar.savingDemosFile': (p: { name: string; done: number; total: number }) =>
+    `正在写入 ${p.name}（${p.done}/${p.total}）`,
   'sidebar.uncategorized': '未分类',
   // ---- 右键 / 下拉菜单 ----
   'menu.rename': '重命名',
   'menu.delete': '删除',
+  'menu.copyPath': '复制路径',
+  'sidebar.currentPath': (p: { path: string }) => `当前目录：${p.path}`,
   'menu.newFile': '新建文件',
   'menu.newDir': '新建文件夹',
   'menu.refresh': '刷新',
@@ -202,6 +235,7 @@ export const zh = {
     `运行器是一个不带模块解析的 Web Worker，请把依赖内联到同一个文件里再运行。`,
 
   // ---- 工作区（目录授权、句柄失效） ----
+  'err.save.cancelled': '保存已取消',
   'err.ws.rootMoved': (p: { name: string }) => `目录 ${p.name} 已不在原位置，已将其从列表中移除`,
   'err.ws.permissionDenied': (p: { name: string }) =>
     `未能获取 ${p.name} 的访问权限，可再次点击，或将其关闭后重新打开`,
