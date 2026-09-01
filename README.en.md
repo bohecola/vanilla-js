@@ -50,4 +50,4 @@ pnpm lint    # code linting (--max-warnings 0; any warning fails)
 
 Online playground: [playground.deore.me](https://playground.deore.me/)
 
-![Jotter UI preview](/src/assets/imgs/preview.png?v=2)
+![Jotter UI preview](/src/assets/imgs/preview.png?v=3)
