@@ -19,11 +19,32 @@ export interface OpenFileSpec {
   language: string
 }
 
+/**
+ * 编辑器的「光标 + 缩进 + 换行符」快照，App 拿去塞底部状态栏（Ln, Col / Spaces: N / LF）。
+ * position 在没 model 时为 undefined —— 状态栏自然不显示光标那两格。
+ * useTabs / indentSize 反映当前 model 实际的缩进配置（Monaco 会按文件内容自动推断）。
+ */
+export interface CursorStatus {
+  position?: { line: number; column: number }
+  /** true = 用 Tab 缩进；false = 用空格 */
+  useTabs: boolean
+  /** 缩进宽度（tabSize） */
+  indentSize: number
+  /** 换行符：LF 或 CRLF */
+  eol: 'LF' | 'CRLF'
+}
+
 export interface EditorHandle {
   /** 打开（必要时新建）某个 key 对应的 model 并切过去 */
   open: (file: OpenFileSpec) => void
   /** 这个 key 的 model 还在不在（可能已被 LRU 淘汰）。在的话内容不必重新读一遍。 */
   has: (key: string) => boolean
+  /**
+   * 声明一批「钉住」的 key：这些 model 不会被 LRU 淘汰。
+   * 用于顶部多标签 —— 每个打开的标签都要常驻，切回去时内容、光标才都在，
+   * 不会因为 model 被淘汰而重读盘 / 丢视图状态。App 在标签集合变化时调用。
+   */
+  setPinnedKeys: (keys: string[]) => void
   /** 整体替换内容并把「已保存」基线重置到此刻（用于新建清空、从磁盘重载） */
   replace: (key: string, value: string) => void
   getValue: (key?: string) => string
@@ -43,6 +64,8 @@ export interface EditorHandle {
 interface EditorProps {
   onDirtyChange?: (key: string, dirty: boolean) => void
   onSave?: () => void
+  /** 光标位置或 model（切换文件）变化时上报当前光标 + 缩进，驱动状态栏 */
+  onCursorStatus?: (status: CursorStatus) => void
 }
 
 /**
@@ -65,19 +88,22 @@ interface ModelRecord {
   lastUsed: number
 }
 
-const Editor = forwardRef<EditorHandle, EditorProps>(({ onDirtyChange, onSave }, ref) => {
+const Editor = forwardRef<EditorHandle, EditorProps>(
+  ({ onDirtyChange, onSave, onCursorStatus }, ref) => {
   const editorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const modelsRef = useRef(new Map<string, ModelRecord>())
   const activeKeyRef = useRef<string | null>(null)
+  // 顶部标签对应的 key 集合：这些 model 常驻、不被 LRU 淘汰。App 每次改标签集合都会同步
+  const pinnedRef = useRef(new Set<string>())
   // 挂载 effect 跑之前 App 就可能调 open（父组件的 effect 后于子组件），先记下来
   const pendingOpenRef = useRef<OpenFileSpec | null>(null)
   const { effective } = useTheme()
 
   // 回调走 ref：Monaco 命令和 window 监听都只注册一次，
   // 直接闭包捕获 prop 会永远调用首次渲染那一版
-  const callbacksRef = useRef({ onDirtyChange, onSave })
-  callbacksRef.current = { onDirtyChange, onSave }
+  const callbacksRef = useRef({ onDirtyChange, onSave, onCursorStatus })
+  callbacksRef.current = { onDirtyChange, onSave, onCursorStatus }
 
   // 创建 effect 刻意不依赖主题，用 ref 读当前值 —— 主题变化由下面的 effect 增量应用，
   // 放进依赖数组会让编辑器被重建
@@ -106,12 +132,16 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ onDirtyChange, onSave },
       modelsRef.current.delete(key)
     }
 
-    // 只淘汰到刚好不超上限，且只挑「干净 + 非当前」的：
-    // 脏 model 一旦 dispose，用户没保存的内容就没了，宁可暂时超出上限
+    // 只淘汰到刚好不超上限，且只挑「干净 + 非当前 + 非钉住」的：
+    // 脏 model 一旦 dispose，用户没保存的内容就没了，宁可暂时超出上限；
+    // 钉住的（顶部打开标签）要常驻，不能因为开得多了被挤掉
     const evict = () => {
       const models = modelsRef.current
       const victims = sortBy(
-        [...models.entries()].filter(([key, rec]) => key !== activeKeyRef.current && !rec.dirty),
+        [...models.entries()].filter(
+          ([key, rec]) =>
+            key !== activeKeyRef.current && !rec.dirty && !pinnedRef.current.has(key)
+        ),
         ([, rec]) => rec.lastUsed
       )
       for (const [key, rec] of victims) {
@@ -166,6 +196,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ onDirtyChange, onSave },
 
       has: (key) => modelsRef.current.has(key),
 
+      setPinnedKeys: (keys) => {
+        pinnedRef.current = new Set(keys)
+      },
+
       replace: (key, value) => {
         const rec = modelsRef.current.get(key)
         if (!rec) return
@@ -199,6 +233,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ onDirtyChange, onSave },
           editorRef.current?.setModel(null)
           activeKeyRef.current = null
         }
+        pinnedRef.current.delete(key)
         drop(key, rec)
       },
 
@@ -217,6 +252,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ onDirtyChange, onSave },
         })
         next.viewState = viewState
         next.lastUsed = ++clock
+        // 钉住关系跟着 key 走：改名后新的 key 要接替旧的继续常驻
+        if (pinnedRef.current.has(oldKey)) {
+          pinnedRef.current.delete(oldKey)
+          pinnedRef.current.add(newKey)
+        }
         // 脏状态要原样带过去：磁盘上那份是改名前保存的内容，未保存的改动确实还没落盘，
         // 侧边栏那个点不能掉。-1 和任何真实的 alternativeVersionId（从 1 起）都不相等。
         if (rec.dirty) {
@@ -259,6 +299,24 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ onDirtyChange, onSave },
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       callbacksRef.current.onSave?.()
     })
+
+    // 状态栏的「Ln, Col / 缩进」：光标动了或换 model 就上报一次。缩进配置在 model 上
+    // （Monaco 会按文件内容自动推断空格 / Tab 和宽度），随 model 一起读即可。
+    const reportStatus = () => {
+      const pos = editorRef.current?.getPosition()
+      const model = editorRef.current?.getModel()
+      const opts = model?.getOptions()
+      if (!opts) return
+      callbacksRef.current.onCursorStatus?.({
+        position: pos ? { line: pos.lineNumber, column: pos.column } : undefined,
+        useTabs: !opts.insertSpaces,
+        indentSize: opts.tabSize,
+        eol: model?.getEOL() === '\r\n' ? 'CRLF' : 'LF',
+      })
+    }
+    editor.onDidChangeCursorPosition(reportStatus)
+    editor.onDidChangeModel(reportStatus)
+    reportStatus()
 
     const pending = pendingOpenRef.current
     if (pending) {
