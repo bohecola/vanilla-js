@@ -63,10 +63,31 @@ export const en: Dict = {
   'editor.download': 'Download',
   'editor.stop': 'Stop',
   'editor.runDisabled': 'The runner only executes JavaScript / TypeScript',
+  'editor.run': 'Run',
+
+  // ---- Tab bar ----
+  'tab.close': 'Close tab',
+  'tab.scrollLeft': 'Scroll tabs left',
+  'tab.scrollRight': 'Scroll tabs right',
+  'tab.ctx.close': 'Close',
+  'tab.ctx.closeOthers': 'Close Others',
+  'tab.ctx.closeRight': 'Close to the Right',
+  'tab.ctx.closeAll': 'Close All',
+  'confirm.closeMany.one': 'Close the unsaved tab?',
+  'confirm.closeMany.many': (p: { count: number }) =>
+    `Close ${p.count} unsaved tabs?`,
+  'confirm.closeMany.unsaved': 'These unsaved changes will be lost.',
+  'tab.closeAria': (p: { name: string }) => `Close tab ${p.name}`,
+  'confirm.closeTab.title': (p: { name: string }) => `Close ${p.name}?`,
+  'confirm.closeTab.unsaved': 'This file has unsaved changes that will be lost if you close it.',
+  'confirm.closeTab.ok': 'Close',
+  'panes.resize': 'Drag to resize the editor and output panels',
 
   // ---- Status bar ----
   'statusbar.noFile': 'No file open',
-  'statusbar.file': (p: { name: string }) => p.name,
+  'statusbar.ln': (p: { line: number; col: number }) => `Ln ${p.line}, Col ${p.col}`,
+  'statusbar.spaces': (p: { size: number }) => `Spaces: ${p.size}`,
+  'statusbar.tabSize': (p: { size: number }) => `Tab Size: ${p.size}`,
   'statusbar.js': 'JavaScript (.js file, runs as JavaScript)',
   'statusbar.ts': 'TypeScript (.ts file, runs as TypeScript)',
 

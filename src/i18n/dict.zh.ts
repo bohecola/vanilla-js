@@ -75,10 +75,31 @@ export const zh = {
   'editor.download': '下载',
   'editor.stop': '停止',
   'editor.runDisabled': '运行器只能执行 JavaScript / TypeScript',
+  'editor.run': '运行',
+
+  // ---- 顶部标签栏 ----
+  'tab.close': '关闭标签',
+  'tab.scrollLeft': '向左滚动标签',
+  'tab.scrollRight': '向右滚动标签',
+  'tab.ctx.close': '关闭',
+  'tab.ctx.closeOthers': '关闭其他',
+  'tab.ctx.closeRight': '关闭右侧',
+  'tab.ctx.closeAll': '关闭全部',
+  'confirm.closeMany.one': '关闭未保存的标签？',
+  'confirm.closeMany.many': (p: { count: number }) =>
+    `关闭 ${p.count} 个未保存的标签？`,
+  'confirm.closeMany.unsaved': '这些未保存的修改将丢失。',
+  'tab.closeAria': (p: { name: string }) => `关闭标签 ${p.name}`,
+  'confirm.closeTab.title': (p: { name: string }) => `关闭 ${p.name}？`,
+  'confirm.closeTab.unsaved': '该文件有未保存的修改，关闭将丢失这些修改。',
+  'confirm.closeTab.ok': '关闭',
+  'panes.resize': '拖拽调整编辑器与输出的宽度',
 
   // ---- 底部状态栏 ----
   'statusbar.noFile': '未打开文件',
-  'statusbar.file': (p: { name: string }) => p.name,
+  'statusbar.ln': (p: { line: number; col: number }) => `Ln ${p.line}, Col ${p.col}`,
+  'statusbar.spaces': (p: { size: number }) => `Spaces: ${p.size}`,
+  'statusbar.tabSize': (p: { size: number }) => `Tab Size: ${p.size}`,
   'statusbar.js': 'JavaScript（.js 文件，按 JavaScript 编译运行）',
   'statusbar.ts': 'TypeScript（.ts 文件，按 TypeScript 编译运行）',
 
