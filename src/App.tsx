@@ -222,6 +222,29 @@ function App() {
     const x = (el.scrollLeft / maxScroll) * (track - w)
     setTabBar({ x, w, overflow: true })
   }, [])
+  // 底部悬浮 thumb 可拖拽横滚（同 VS Code）：按住左右拖，把 scrollLeft 带过去。
+  const tabBarDragRef = useRef<{ startX: number; startLeft: number } | null>(null)
+  const startTabBarDrag = (e: React.PointerEvent) => {
+    const el = tabScrollRef.current
+    if (!el) return
+    e.preventDefault()
+    tabBarDragRef.current = { startX: e.clientX, startLeft: el.scrollLeft }
+    const move = (ev: PointerEvent) => {
+      const el2 = tabScrollRef.current
+      const st = tabBarDragRef.current
+      if (!el2 || !st) return
+      const track = el2.clientWidth
+      const ratio = (el2.scrollWidth - track) / Math.max(track - tabBar.w, 1)
+      el2.scrollLeft = st.startLeft + (ev.clientX - st.startX) * ratio
+    }
+    const up = () => {
+      tabBarDragRef.current = null
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
   useEffect(() => {
     updateTabScrollState()
     const el = tabScrollRef.current
@@ -1427,15 +1450,16 @@ function App() {
               })}
                 </div>
                 {/* 悬浮进度条：绝对贴容器底部、不占高度，方形直角、3px 半透明（同 VS Code），
-                    悬停标签栏才浮现；只在标签溢出时出现 */}
+                    悬停标签栏才浮现；只在标签溢出时出现。浮现后可按住 thumb 左右拖拽横滚 */}
                 {tabBar.overflow && (
                   <div
                     aria-hidden
-                    className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-transparent opacity-0 transition-opacity duration-150 group-hover/tabs:opacity-100"
+                    onPointerDown={startTabBarDrag}
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-[10px] touch-none opacity-0 transition-opacity duration-150 group-hover/tabs:pointer-events-auto group-hover/tabs:opacity-100 group-hover/tabs:cursor-grab active:cursor-grabbing"
                   >
                     <div
-                      className="h-full bg-[var(--border-strong)]/60"
-                      style={{ width: tabBar.w, marginLeft: tabBar.x }}
+                      className="pointer-events-none absolute bottom-0 h-[3px] bg-[var(--border-strong)]/60"
+                      style={{ width: tabBar.w, left: tabBar.x }}
                     />
                   </div>
                 )}

@@ -786,6 +786,32 @@ export default function Sidebar({
     updateVBar()
   }, [updateVBar])
 
+  // 竖向悬浮 thumb 可拖拽滚动（同 VS Code）：按住 thumb 上下拖，把 scrollTop 带过去。
+  // thumb 位移 → scrollTop 的换算按「可滚动余量 / thumb 可走空间」的比值来。
+  const vDragRef = useRef<{ startY: number; startTop: number } | null>(null)
+  const startVBarDrag = (e: React.PointerEvent) => {
+    const el = vScrollRef.current
+    if (!el) return
+    e.preventDefault()
+    vDragRef.current = { startY: e.clientY, startTop: el.scrollTop }
+    const move = (ev: PointerEvent) => {
+      const el2 = vScrollRef.current
+      const st = vDragRef.current
+      if (!el2 || !st) return
+      const sh = el2.scrollHeight
+      const ch = el2.clientHeight
+      const ratio = (sh - ch) / Math.max(ch - vBar.h, 1)
+      el2.scrollTop = st.startTop + (ev.clientY - st.startY) * ratio
+    }
+    const up = () => {
+      vDragRef.current = null
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
   // 最近一次在侧边栏点击的条目（目录或文件）。重命名快捷键（F2 / Mac 回车）作用于它。
   const selectedEntryRef = useRef<Entry | null>(null)
 
@@ -1193,15 +1219,18 @@ export default function Sidebar({
             </div>
           ))}
         </div>
-        {/* 竖向悬浮进度条：贴容器右缘、方形直角、不占宽度，悬停列表才浮现（同 VS Code） */}
+        {/* 竖向悬浮进度条：贴容器右缘、方形直角、不占宽度，悬停列表才浮现（同 VS Code）。
+            浮现后可按住 thumb 上下拖拽滚动（同 VS Code）—— 平时整条 pointer-events-none 不挡
+            行点击，列表 hover 时才把命中交给这一列的拖拽条 */}
         {vBar.overflow && (
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 w-[4px] opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+            onPointerDown={startVBarDrag}
+            className="pointer-events-none absolute inset-y-0 right-0 w-[10px] touch-none opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-hover:cursor-grab active:cursor-grabbing"
           >
             <div
-              className="w-full bg-[var(--border-strong)]/60"
-              style={{ height: vBar.h, marginTop: vBar.y }}
+              className="pointer-events-none absolute right-0 w-[4px] bg-[var(--border-strong)]/60"
+              style={{ top: vBar.y, height: vBar.h }}
             />
           </div>
         )}
