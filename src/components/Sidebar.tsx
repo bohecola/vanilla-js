@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { clamp, groupBy, map } from 'lodash-es'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
@@ -60,6 +60,11 @@ const INDENT = 20
 
 /** 一行的左内边距。根目录行是 depth 0，它下面的第一层是 1。 */
 const padOf = (depth: number) => 8 + depth * INDENT
+
+/* 全局选中行 id 的拼法。文件/模板行直接用打开 key（local:… / builtin:…）；
+   目录与根没有对应的打开 key，各带前缀，避免和同名文件撞 id。 */
+const dirSelId = (path: string) => `dir:${path}`
+const rootSelId = (id: string) => `root:${id}`
 
 /**
  * 行首那个图标槽（折叠箭头 / 文件图标都放这里）。
@@ -151,12 +156,12 @@ function readWidth(): number {
 interface RowProps extends React.ComponentProps<'button'> {
   depth: number
   label: string
+  /** 是否命中全局选中（同 VS Code：同一时刻侧栏只有一行是选中态）。
+      命中则整行无圆角平铺 --list-active 底色 + 一圈细的焦点描边。 */
+  selected?: boolean
+  /** 与 selected 同义，历史遗留名：当前打开文件也当选中处理。调用来统一传 selected */
   active?: boolean
   dirty?: boolean
-  /** 当前打开的文件：用一圈内描边标出，和「新建目标目录」的下划线区分开 */
-  selected?: boolean
-  /** 新建的目标目录：用下划线标出。和文件选中环（selected）可以同时存在但不冲突 */
-  targeted?: boolean
   /** 命中忽略名单的目录、以及非文本文件：显示为淡色，但照样可点 */
   dimmed?: boolean
   icon: React.ReactNode
@@ -169,7 +174,6 @@ function Row({
   active,
   dirty,
   selected,
-  targeted,
   dimmed,
   icon,
   className,
@@ -177,6 +181,7 @@ function Row({
   ...rest
 }: RowProps) {
   const { t } = useI18n()
+  const isSelected = selected || active
   return (
     <button
       type="button"
@@ -185,21 +190,19 @@ function Row({
       // style（WebkitTouchCallout），直接 {...rest} 会把这里的缩进整个顶掉
       style={{ paddingLeft: padOf(depth), ...style }}
       className={cn(
-        'relative flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left text-[13px]',
-        'hover:bg-[var(--panel-hover)]',
-        active
-          ? 'bg-[var(--panel-hover)] font-medium text-[var(--text-primary)]'
-          : 'text-[var(--text-body)]',
-        dimmed && !active && 'text-[var(--text-faint)]',
-        selected && 'ring-1 ring-[var(--primary)]/50 ring-inset',
+        // 不加圆角：VS Code 的选中 / hover 是贴边的整行矩形
+        // 预留 1px 透明边框：选中时改成主色细框，四周都画得出来、且不造成布局跳动
+        'relative flex w-full items-center gap-1.5 border border-transparent py-1 pr-2 text-left text-[13px] text-[var(--text-body)]',
+        // hover 只加在非选中行上，避免悬停时把选中底色盖成普通 hover
+        !isSelected && 'hover:bg-[var(--panel-hover)]',
+        // 选中行：整行平铺半透明底色 + 四周 1px 细框（同 VS Code 的焦点描边）
+        isSelected &&
+          'bg-[var(--list-active)] border-[var(--list-active-ring)]',
+        dimmed && !isSelected && 'text-[var(--text-faint)]',
         className
       )}
       {...rest}
     >
-      {/* 新建目标目录：左侧竖条。独立元素、不占宽度，圆角也不会把竖条切坏 */}
-      {targeted && (
-        <span className="absolute bottom-1 left-0 top-1 w-[2px] rounded-sm bg-[var(--primary)]" />
-      )}
       <span className={ICON_SLOT}>{icon}</span>
       <span className="truncate font-mono">{label}</span>
       {dirty && (
@@ -342,11 +345,17 @@ function RootRow({
   workspace,
   draft,
   onClose,
+  selected,
+  onSelect,
 }: {
   root: WorkspaceRoot
   workspace: Workspace
   draft: FileDraft
   onClose: (root: WorkspaceRoot) => void
+  /** 是否全局选中（同 VS Code：整行高亮） */
+  selected: boolean
+  /** 点这一行时把它设为全局选中 */
+  onSelect: () => void
 }) {
   const { t } = useI18n()
   const open = workspace.expanded.has(root.id)
@@ -392,6 +401,7 @@ function RootRow({
           }
           workspace.select(root.id)
           void workspace.toggle(rootAsEntry(root))
+          onSelect()
         }}
         // 右键落在行上，菜单开在 ⋯ 那个位置（Radix 的 DropdownMenu 是贴着
         // trigger 定位的）。位置固定反而比跟着指针跑好认。
@@ -401,14 +411,14 @@ function RootRow({
         }}
         style={{ paddingLeft: padOf(0) }}
         className={cn(
-          'relative flex min-w-0 flex-1 items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-[13px]',
-          'hover:bg-[var(--panel-hover)]'
+          // 预留 1px 透明边框：选中时改成主色细框，四周都画得出来、不造成布局跳动
+          'relative flex min-w-0 flex-1 items-center gap-1.5 border border-transparent py-1 pr-1 text-left text-[13px]',
+          // 选中行：无圆角平铺 + 四周 1px 细描边；hover 不盖掉选中
+          selected
+            ? 'bg-[var(--list-active)] border-[var(--list-active-ring)]'
+            : 'hover:bg-[var(--panel-hover)]'
         )}
       >
-        {/* 新建目标根目录：左侧竖条（与普通目录行一致） */}
-        {workspace.target === root.id && (
-          <span className="absolute bottom-1 left-0 top-1 w-[2px] rounded-sm bg-[var(--primary)]" />
-        )}
         <span className={ICON_SLOT}>
           {locked ? (
             <Icon className="icon-[lucide--lock]" />
@@ -510,6 +520,10 @@ interface TreeProps {
   draft: FileDraft
   activeKey: string | null
   dirtyKeys: Set<string>
+  /** 全局选中的行 id（见 Sidebar 里 selectedId 的说明） */
+  selectedId: string | null
+  /** 点某一行时把它设为全局选中。行 id 的拼法见 dirSelId / rootSelId / 打开 key */
+  onSelect: (id: string) => void
   onOpenFile: (entry: FileEntry) => void
   onRenameEntry: (entry: Entry) => void
   onDeleteEntry: (entry: Entry) => void
@@ -526,6 +540,8 @@ function Tree({
   draft,
   activeKey,
   dirtyKeys,
+  selectedId,
+  onSelect,
   onOpenFile,
   onRenameEntry,
   onDeleteEntry,
@@ -559,8 +575,7 @@ function Tree({
               depth={depth}
               label={entry.name}
               dimmed={entry.ignored}
-              // 新建目标目录用下划线标出；和文件选中环（selected）可同时存在、不冲突
-              targeted={workspace.target === entry.path}
+              selected={selectedId === dirSelId(entry.path)}
               icon={
                 open ? (
                   <Icon className="icon-[lucide--chevron-down]" />
@@ -568,12 +583,13 @@ function Tree({
                   <Icon className="icon-[lucide--chevron-right]" />
                 )
               }
-              // 一次点击同时做两件事：展开/收起，并把它设为新建目标。
+              // 一次点击同时做两件事：展开/收起，并把它设为新建目标 + 全局选中。
               // 不拆成「点箭头展开、点名字选中」——这条侧栏最窄只有 180px，
               // 两个命中区挤在一起只会点错。
               onClick={() => {
                 workspace.select(entry.path)
                 void workspace.toggle(entry)
+                onSelect(dirSelId(entry.path))
                 onSelectEntry(entry)
               }}
             />
@@ -586,6 +602,8 @@ function Tree({
               draft={draft}
               activeKey={activeKey}
               dirtyKeys={dirtyKeys}
+              selectedId={selectedId}
+              onSelect={onSelect}
               onOpenFile={onOpenFile}
               onRenameEntry={onRenameEntry}
               onDeleteEntry={onDeleteEntry}
@@ -610,9 +628,7 @@ function Tree({
           <Row
             depth={depth}
             label={entry.name}
-            active={activeKey === key}
-            // 当前打开的文件也和目录一样加一圈选中环，视觉统一
-            selected={activeKey === key}
+            selected={selectedId === key}
             dirty={dirtyKeys.has(key)}
             // 认不出后缀的文件点开会被拒（可能是二进制），先在视觉上说明它不一样
             dimmed={language === null}
@@ -625,6 +641,7 @@ function Tree({
             }
             onClick={() => {
               onOpenFile(entry)
+              onSelect(key)
               onSelectEntry(entry)
             }}
           />
@@ -729,9 +746,59 @@ export default function Sidebar({
     }
   })
   const [refreshing, setRefreshing] = useState(false)
+  /** 正在拖动侧栏宽度：拖动全程把手会整条加粗变亮（同 VS Code 拖分栏） */
+  const [dragging, setDragging] = useState(false)
+
+  // ---- 目录列表竖向悬浮滚动条（同 VS Code：原生隐藏、不占宽，鼠标移到列表上才浮现）----
+  const vScrollRef = useRef<HTMLDivElement | null>(null)
+  /** thumb 几何：y=距容器顶偏移、h=高度（px），overflow 表示内容是否溢出 */
+  const [vBar, setVBar] = useState({ y: 0, h: 0, overflow: false })
+  const updateVBar = useCallback(() => {
+    const el = vScrollRef.current
+    if (!el) return
+    const sh = el.scrollHeight
+    const ch = el.clientHeight
+    const overflow = sh > ch
+    if (!overflow) {
+      setVBar((p) => (p.overflow ? { y: 0, h: 0, overflow: false } : p))
+      return
+    }
+    const h = Math.max(30, (ch * ch) / sh)
+    const maxScroll = sh - ch
+    const y = (el.scrollTop / maxScroll) * (ch - h)
+    setVBar((p) => (p.y === y && p.h === h && p.overflow ? p : { y, h, overflow: true }))
+  }, [])
+  useEffect(() => {
+    updateVBar()
+    const el = vScrollRef.current
+    if (!el) return
+    const ro = new ResizeObserver(updateVBar)
+    ro.observe(el)
+    el.addEventListener('scroll', updateVBar, { passive: true })
+    return () => {
+      ro.disconnect()
+      el.removeEventListener('scroll', updateVBar)
+    }
+  }, [updateVBar])
+  // 树内容增删会让 scrollHeight 变化但不触发上面的 ResizeObserver（容器本身没变大），
+  // 所以每次提交后都重算一次（带守卫，值没变就不 set，避免多余渲染）。
+  useLayoutEffect(() => {
+    updateVBar()
+  }, [updateVBar])
 
   // 最近一次在侧边栏点击的条目（目录或文件）。重命名快捷键（F2 / Mac 回车）作用于它。
   const selectedEntryRef = useRef<Entry | null>(null)
+
+  // 全局选中行 id（同 VS Code：同一时刻整条侧栏只有一行高亮）。
+  // 文件 / 模板行的 id 就是它们的打开 key（local:… / builtin:…），目录 / 根是带前缀的
+  // 合成 id（dir:… / root:…），三者互不撞名。目录点击不影响 activeKey，所以这里独立存一份。
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // 打开某个文件/模板（activeKey 变化）视为选中了那一行；目录选中不触发 activeKey，
+  // 靠各行的 onClick 显式 set，这里不用管
+  useEffect(() => {
+    if (activeKey) setSelectedId(activeKey)
+  }, [activeKey])
+
   // macOS 上「回车」进入重命名，其它平台回车另有他用，F2 全平台通用
   const isMac =
     typeof navigator !== 'undefined' &&
@@ -787,6 +854,7 @@ export default function Sidebar({
     e.preventDefault()
     const startX = e.clientX
     const startWidth = panel.getBoundingClientRect().width
+    setDragging(true)
     const onMove = (ev: PointerEvent) => {
       setWidth(clamp(startWidth + ev.clientX - startX, MIN_WIDTH, MAX_WIDTH))
     }
@@ -795,6 +863,7 @@ export default function Sidebar({
       window.removeEventListener('pointerup', onUp)
       document.body.style.removeProperty('cursor')
       document.body.style.removeProperty('user-select')
+      setDragging(false)
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -831,7 +900,7 @@ export default function Sidebar({
   return (
     <div
       style={{ width }}
-      className="relative flex shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--panel-bg)]"
+      className="relative flex shrink-0 flex-col overflow-hidden bg-[var(--panel-bg)]"
     >
       <div className="flex items-center justify-between px-3 py-2">
         <span className="text-sm text-[var(--text-muted)]">{t('sidebar.title')}</span>
@@ -863,9 +932,17 @@ export default function Sidebar({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto pb-3">
+      {/* 竖向悬浮滚动条：相对定位一个外层，内层才是真正滚动区（原生隐藏），
+          overlay 贴右、悬停浮现、不占宽度 */}
+      <div className="group relative min-h-0 flex-1">
+        <div
+          ref={vScrollRef}
+          className="v-scrollbar h-full min-h-0 overflow-y-auto pb-3"
+        >
         {/* ---- 本地目录 ---- */}
-        <div className="flex items-center gap-0.5 px-2 pb-1 pt-1">
+        {/* 分组标题吸顶（sticky），滚动时标题留在顶部、只有下面内容滚走（同 VS Code
+            的分组区）。铺面板底色盖住滑过下方的条目，悬停浮现的竖向滚动条在它右侧 */}
+        <div className="sticky top-0 z-10 flex items-center gap-0.5 border-b border-[var(--border)] bg-[var(--panel-bg)] px-2 pb-1 pt-1">
           <span className="mr-auto text-[11px] tracking-wide text-[var(--text-faint)]">
             {t('sidebar.localDirs')}
           </span>
@@ -951,6 +1028,8 @@ export default function Sidebar({
                   workspace={workspace}
                   draft={draft}
                   onClose={onCloseRoot}
+                  selected={selectedId === rootSelId(root.id)}
+                  onSelect={() => setSelectedId(rootSelId(root.id))}
                 />
                 {!root.needsPermission && workspace.expanded.has(root.id) && (
                   <Tree
@@ -960,6 +1039,8 @@ export default function Sidebar({
                     draft={draft}
                     activeKey={activeKey}
                     dirtyKeys={dirtyKeys}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
                     onOpenFile={onOpenLocalFile}
                     onRenameEntry={onRenameEntry}
                     onDeleteEntry={onDeleteEntry}
@@ -1097,11 +1178,13 @@ export default function Sidebar({
                       <Row
                         depth={1}
                         label={item.label}
-                        active={activeKey === key}
-                        selected={activeKey === key}
+                        selected={selectedId === key}
                         dirty={dirtyKeys.has(key)}
                         icon={<Icon className="icon-[lucide--file-code-2]" />}
-                        onClick={() => onOpenTemplate(item.path)}
+                        onClick={() => {
+                          onOpenTemplate(item.path)
+                          setSelectedId(key)
+                        }}
                       />
                     </li>
                   )
@@ -1109,6 +1192,19 @@ export default function Sidebar({
               </ul>
             </div>
           ))}
+        </div>
+        {/* 竖向悬浮进度条：贴容器右缘、方形直角、不占宽度，悬停列表才浮现（同 VS Code） */}
+        {vBar.overflow && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 w-[4px] opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+          >
+            <div
+              className="w-full bg-[var(--border-strong)]/60"
+              style={{ height: vBar.h, marginTop: vBar.y }}
+            />
+          </div>
+        )}
       </div>
 
       {/* 当前目标目录的可读路径。浏览器拿不到真实绝对路径，只能展示应用内相对路径，
@@ -1125,15 +1221,26 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* 拖拽把手：视觉上只有 1px 的边框，命中区域放宽到 5px */}
+      {/* 拖拽把手：命中区 6px 好抓。侧栏右缘那根边界发丝线就由这根亮线承担（容器不再画
+          border-r），贴 right-0 = 真实边界。平时 w-px 发丝线；鼠标放上去（hover）加粗到
+          4px 并亮主色；按住拖动保持 hover 亮度（不再更亮）。 */}
       <div
         role="separator"
         aria-orientation="vertical"
         onPointerDown={startDrag}
         onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
         title={t('sidebar.resize')}
-        className="absolute inset-y-0 right-0 w-[5px] cursor-col-resize hover:bg-[var(--primary)]/30"
-      />
+        className="group absolute inset-y-0 right-0 z-10 w-[6px] cursor-col-resize"
+      >
+        <span
+          className={cn(
+            'absolute inset-y-0 right-0 transition-[width,background-color] duration-100',
+            dragging
+              ? 'w-[4px] bg-[var(--primary)]/70'
+              : 'w-px bg-[var(--border)] group-hover:w-[4px] group-hover:bg-[var(--primary)]/70'
+          )}
+        />
+      </div>
     </div>
   )
 }
