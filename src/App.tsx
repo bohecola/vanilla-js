@@ -1,8 +1,8 @@
 import { useRef, useEffect, useState, useCallback, type ChangeEvent } from 'react'
 import { uniq } from 'lodash-es'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Icon } from '@/components/ui/icon'
+import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,9 +10,16 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 import { GithubMark } from './components/GithubMark'
 import { JotterMark } from './components/JotterMark'
-import Editor, { EditorHandle } from './components/Editor'
+import Editor, { EditorHandle, type CursorStatus } from './components/Editor'
 import Console, { ConsoleHandle } from './components/Console'
 import Sidebar from './components/Sidebar'
 import ConfirmDialog from './components/ConfirmDialog'
@@ -30,6 +37,7 @@ import {
   removeEntry,
   writeTextFile,
   type Entry,
+  type FileEncoding,
   type FileEntry,
 } from './lib/fs-access'
 import { codeRunner } from './lib/runner'
@@ -65,6 +73,9 @@ interface ActiveFile {
   /** 标题栏上显示的名字 */
   name: string
   language: string
+  /** 底部状态栏展示的编码。local 来自读盘时对 BOM 的推断；其余在浏览器里生成的
+      文件（内置示例 / 草稿 / 导入）按 UTF-8 报。 */
+  encoding: FileEncoding
   handle?: FileSystemFileHandle
 }
 
@@ -72,6 +83,9 @@ interface ActiveFile {
 interface LocalMeta {
   handle: FileSystemFileHandle
   lastModified: number
+  /** 该文件的编码推断结果，随 key 一起存，重开 / 改名后仍能对上。
+      undefined 表示没走读盘推断（浏览器里新生成的），按 UTF-8 报即可。 */
+  encoding?: FileEncoding
 }
 
 type NoticeTone = 'info' | 'warn' | 'error'
@@ -108,8 +122,274 @@ function App() {
   const { mode: langMode, setMode: setLangMode, t } = useI18n()
   const confirm = useConfirm()
 
-  const [active, setActive] = useState<ActiveFile | null>(null)
+  // ---- 多标签数据模型 ----
+  // 打开的标签按顺序存一份（VS Code 式），当前激活的是哪一个用 activeKey 记。
+  // `active` 是从它们派生的「当前文件」，保留这个名字是为了让 handleSave / 状态栏 /
+  // 运行等大量既存代码读 active 时不用改 —— 它们仍拿到「当前激活那个文件」。
+  const [tabs, setTabs] = useState<ActiveFile[]>([])
+  const [activeKey, setActiveKey] = useState<string | null>(null)
+  const active = tabs.find((x) => x.key === activeKey) ?? null
   const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(new Set())
+
+  // 异步流程里（关了标签、草稿转正之类）读 state 会拿到旧值，同步一份到 ref 供回调用
+  const tabsLiveRef = useRef<ActiveFile[]>([])
+  const activeKeyLiveRef = useRef<string | null>(null)
+  useEffect(() => {
+    tabsLiveRef.current = tabs
+    activeKeyLiveRef.current = activeKey
+  }, [tabs, activeKey])
+
+  // 让 Editor 保住所有打开标签的 model（不被 LRU 淘汰），这样切标签时不重读盘、不丢光标。
+  const tabsKeys = tabs.map((x) => x.key)
+  useEffect(() => {
+    editorRef.current?.setPinnedKeys(tabsKeys)
+  }, [tabsKeys])
+
+  // ---- 编辑器 / 控制台 水平分栏 ----
+  // editorW 为 null 表示未拖过：两栏各占一半（编辑器与输出都 flex-1）。
+  // 一旦拖过，就按像素记住编辑器宽度。两侧都可被拖小（不再锁编辑器 >= 一半），
+  // 各留一个可读下限；拖到正中间 50% 附近时有「吸附」的顿感，方便停在正中。
+  const mainRef = useRef<HTMLElement | null>(null)
+  const [editorW, setEditorW] = useState<number | null>(null)
+  /** 正在拖动分栏（用于给分隔带一个明显的“拖动中”高亮） */
+  const [splitting, setSplitting] = useState(false)
+  const CONSOLE_MIN = 220 // px，任何一侧至少保住的宽度
+  const SNAP = 20 // px：距正中 50% 这么近就会被磁吸住
+  const SNAP_RELEASE = 32 // px：已经吸在正中间后，得拖开这么远才挣脱（更强的顿感）
+  const startSplitDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const wrap = mainRef.current
+    if (!wrap) return
+    const wrapW = wrap.getBoundingClientRect().width
+    const startX = e.clientX
+    const startW = wrap.querySelector('[data-editor-pane]')?.getBoundingClientRect().width ?? wrapW / 2
+    const minW = CONSOLE_MIN // 编辑器可拖到较小
+    const maxW = Math.round(wrapW - CONSOLE_MIN) // 给另一侧留出可读下限
+    const half = Math.round(wrapW / 2)
+    // 磁吸锁：一旦被吸到正中，需要拖出 SNAP_RELEASE 才解开，制造明显的“顿”感
+    let latched = false
+
+    setSplitting(true)
+    const prevUserSelect = document.body.style.userSelect
+    document.body.style.userSelect = 'none' // 拖动中不选中文本
+
+    const onMove = (ev: PointerEvent) => {
+      const raw = startW + (ev.clientX - startX)
+      const d = raw - half
+      let target = raw
+      if (latched) {
+        // 已吸住：拖出释放带之前保持正中
+        if (Math.abs(d) > SNAP_RELEASE) {
+          latched = false
+        } else {
+          target = half
+        }
+      } else if (Math.abs(d) <= SNAP) {
+        latched = true
+        target = half
+      }
+      const w = Math.min(Math.max(target, minW), Math.max(minW, maxW))
+      setEditorW(Math.round(w))
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = prevUserSelect
+      setSplitting(false)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    document.body.style.cursor = 'col-resize'
+  }, [CONSOLE_MIN, SNAP, SNAP_RELEASE])
+
+  // ---- 标签栏横向滚动（同 VS Code：原生滚动条隐藏、不占高度，用悬浮细条替代）----
+  const tabScrollRef = useRef<HTMLDivElement | null>(null)
+  /** 悬浮进度条几何：x/w 是 thumb 相对 track 的 left/宽（px），overflow 表示是否溢出 */
+  const [tabBar, setTabBar] = useState({ x: 0, w: 0, overflow: false })
+  const updateTabScrollState = useCallback(() => {
+    const el = tabScrollRef.current
+    if (!el) return
+    const maxScroll = el.scrollWidth - el.clientWidth
+    const track = el.clientWidth
+    const overflow = maxScroll > 0
+    if (!overflow) {
+      setTabBar({ x: 0, w: 0, overflow: false })
+      return
+    }
+    // thumb 宽 ≈ track × (track / scrollWidth)，保个下限好抓
+    const w = Math.max(36, (track * track) / Math.max(el.scrollWidth, 1))
+    const x = (el.scrollLeft / maxScroll) * (track - w)
+    setTabBar({ x, w, overflow: true })
+  }, [])
+  useEffect(() => {
+    updateTabScrollState()
+    const el = tabScrollRef.current
+    if (!el) return
+    const ro = new ResizeObserver(updateTabScrollState)
+    ro.observe(el)
+    el.addEventListener('scroll', updateTabScrollState, { passive: true })
+    // 标签溢出时把普通鼠标滚轮转成横向滚动（同 VS Code：滚轮直接翻 tab，不滚页面）。
+    // 非 passive 才能 preventDefault 挡住页面纵向滚动。
+    const onWheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth) return // 没溢出就交给页面正常滚动
+      e.preventDefault()
+      el.scrollLeft += e.deltaY + e.deltaX
+      updateTabScrollState()
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      ro.disconnect()
+      el.removeEventListener('scroll', updateTabScrollState)
+      el.removeEventListener('wheel', onWheel)
+    }
+  }, [updateTabScrollState, tabs.length])
+  // 切换激活标签时把它滚到可见（VS Code 行为）
+  useEffect(() => {
+    const el = tabScrollRef.current
+    if (!el || !activeKey) return
+    const act = el.querySelector('[data-active-tab="true"]') as HTMLElement | null
+    act?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    updateTabScrollState()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKey, tabs.length])
+
+
+  // Editor 该切到哪个 model 由调用方在之前/之后用 editorRef.open 处理（见各 open 函数）。
+  const openOrActivate = useCallback((file: ActiveFile) => {
+    setTabs((prev) => {
+      const i = prev.findIndex((x) => x.key === file.key)
+      if (i === -1) return [...prev, file]
+      const next = [...prev]
+      next[i] = file
+      return next
+    })
+    setActiveKey(file.key)
+  }, [])
+
+  // 关闭某标签（供标签栏 × 用）。脏的走二次确认；关闭激活标签则切到相邻标签；
+  // 关到最后一个就退回一张空白草稿（与删除当前文件后 openScratch 一致）。
+  // 注意读的都是 live ref / 本处可拿到的稳定量 —— 关闭确认可能跨 await，不能吃旧 state。
+  const closeTab = useCallback(
+    async (key: string) => {
+      const curTabs = tabsLiveRef.current
+      const file = curTabs.find((x) => x.key === key)
+      if (!file) return
+      if (dirtyRef.current.has(key)) {
+        const ok = await confirm.ask({
+          title: t('confirm.closeTab.title', { name: file.name }),
+          lines: [t('confirm.closeTab.unsaved')],
+          confirmText: t('confirm.closeTab.ok'),
+          tone: 'danger',
+        })
+        if (!ok) return
+      }
+      editorRef.current?.close(key)
+      handleDirtyChange(key, false)
+      const idx = curTabs.findIndex((x) => x.key === key)
+      const next = curTabs.filter((x) => x.key !== key)
+      setTabs(next)
+      if (activeKeyLiveRef.current === key) {
+        if (next.length === 0) {
+          setActiveKey(null)
+          openScratch() // 全关完 → 空白草稿
+        } else {
+          // 优先右边邻居，到头了用左边
+          const pick = next[Math.min(idx, next.length - 1)] ?? next[next.length - 1]
+          setActiveKey(pick.key)
+          editorRef.current?.open({ key: pick.key, value: '', language: pick.language })
+        }
+      }
+    },
+    [confirm, t]
+  )
+
+  // 从标签里移除一批 key（目录删除 / 移除根目录时用），并从 tabs / activeKey 里同步清掉。
+  // 返回「被移除的标签里是否包含当前激活的」，调用方据此决定要不要 openScratch 兜底。
+  const dropTabsByKeys = useCallback((keys: string[]) => {
+    const kset = new Set(keys)
+    const cur = activeKeyLiveRef.current
+    const removedActive = !!cur && kset.has(cur)
+    if (removedActive) setActiveKey(null)
+    setTabs((prev) => prev.filter((x) => !kset.has(x.key)))
+    return removedActive
+  }, [])
+
+  // 切换到已打开的标签（点标签栏）：把 Editor 切到那个 model，不重读内容
+  const switchTab = useCallback((key: string) => {
+    if (key === activeKeyLiveRef.current) return
+    const file = tabsLiveRef.current.find((x) => x.key === key)
+    if (!file) return
+    setActiveKey(key)
+    editorRef.current?.open({ key, value: '', language: file.language })
+  }, [])
+
+  // 批量关闭一批标签（标签右键菜单：关闭其他/右侧/全部）。只要这批里含未保存的脏标签，
+  // 就先弹一次确认带过整批；然后逐个 editor.close 并从 tabs 里移除；若删掉了当前激活的，
+  // 就在剩余里选一个激活（优先 prefer，其次最左），一个不剩就退回空白草稿。
+  const closeMany = useCallback(
+    async (keysToClose: string[], prefer?: string) => {
+      const curTabs = tabsLiveRef.current
+      const kset = new Set(keysToClose)
+      const targets = curTabs.filter((x) => kset.has(x.key))
+      if (targets.length === 0) return
+      const dirtyCount = targets.filter((x) => dirtyRef.current.has(x.key)).length
+      if (dirtyCount > 0) {
+        const ok = await confirm.ask({
+          title:
+            dirtyCount === 1
+              ? t('confirm.closeMany.one')
+              : t('confirm.closeMany.many', { count: dirtyCount }),
+          lines: [t('confirm.closeMany.unsaved')],
+          confirmText: t('confirm.closeTab.ok'),
+          tone: 'danger',
+        })
+        if (!ok) return
+      }
+      for (const x of targets) {
+        editorRef.current?.close(x.key)
+        handleDirtyChange(x.key, false)
+      }
+      const remaining = curTabs.filter((x) => !kset.has(x.key))
+      setTabs(remaining)
+      const curActive = activeKeyLiveRef.current
+      if (curActive && kset.has(curActive)) {
+        if (remaining.length === 0) {
+          setActiveKey(null)
+          openScratch()
+        } else {
+          const pick = remaining.find((x) => x.key === prefer) ?? remaining[0]
+          setActiveKey(pick.key)
+          editorRef.current?.open({ key: pick.key, value: '', language: pick.language })
+        }
+      }
+    },
+    [confirm, t]
+  )
+
+  // 标签右键菜单命令（同 VS Code）：
+  // 关闭本标签 / 关闭其他 / 关闭右侧 / 关闭全部
+  const menuCloseOthers = useCallback(
+    (key: string) => closeMany(tabsLiveRef.current.filter((x) => x.key !== key).map((x) => x.key), key),
+    [closeMany]
+  )
+  const menuCloseToRight = useCallback(
+    (key: string) => {
+      const cur = tabsLiveRef.current
+      const i = cur.findIndex((x) => x.key === key)
+      if (i === -1) return
+      closeMany(cur.slice(i + 1).map((x) => x.key), key)
+    },
+    [closeMany]
+  )
+  const menuCloseAll = useCallback(
+    () => closeMany(tabsLiveRef.current.map((x) => x.key)),
+    [closeMany]
+  )
+
+
+  // 底部状态栏的「Ln, Col / Spaces: N」来源，由 Editor 上报（光标移动 / 换文件时刷新）
+  const [cursor, setCursor] = useState<CursorStatus | null>(null)
   const [running, setRunning] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   /** 把 Demo 存到本地时的写入进度（null 表示当前没有正在进行的保存） */
@@ -213,7 +493,7 @@ function App() {
         const code = await loadTemplate(path)
         const language = languageFromFilename(name)
         editorRef.current?.open({ key, value: code, language })
-        setActive({ key, kind: 'builtin', name, language })
+        openOrActivate({ key, kind: 'builtin', name, language, encoding: 'UTF-8' })
         consoleRef.current?.clear()
       } catch (err) {
         setNotice({
@@ -244,18 +524,25 @@ function App() {
             })
           }
         } else {
-          const { text, lastModified } = await readTextFile(entry.handle)
+          const { text, lastModified, encoding } = await readTextFile(entry.handle)
           editorRef.current?.open({ key, value: text, language })
-          localMetaRef.current.set(key, { handle: entry.handle, lastModified })
+          localMetaRef.current.set(key, { handle: entry.handle, lastModified, encoding })
         }
-        setActive({ key, kind: 'local', name: entry.name, language, handle: entry.handle })
+        openOrActivate({
+          key,
+          kind: 'local',
+          name: entry.name,
+          language,
+          encoding: localMetaRef.current.get(key)?.encoding ?? 'UTF-8',
+          handle: entry.handle,
+        })
         consoleRef.current?.clear()
         editorRef.current?.focus()
       } catch (err) {
         setNotice({ tone: 'error', text: messageOf(err, t) })
       }
     },
-    [t]
+    [t, openOrActivate]
   )
 
   const openScratch = useCallback(() => {
@@ -263,10 +550,16 @@ function App() {
     editorRef.current?.open({ key, value: '', language: 'javascript' })
     // model 可能早就存在（上次的草稿），open 不会动它的内容，这里显式清空
     editorRef.current?.replace(key, '')
-    setActive({ key, kind: 'scratch', name: t('file.scratch'), language: 'javascript' })
+    openOrActivate({
+      key,
+      kind: 'scratch',
+      name: t('file.scratch'),
+      language: 'javascript',
+      encoding: 'UTF-8',
+    })
     consoleRef.current?.clear()
     editorRef.current?.focus()
-  }, [t])
+  }, [t, openOrActivate])
 
   /*
     删除 / 改名的收尾工作。
@@ -285,7 +578,7 @@ function App() {
     const keys = [
       ...localMetaRef.current.keys(),
       ...dirtyKeys,
-      ...(active ? [active.key] : []),
+      ...tabs.map((x) => x.key),
     ]
     return uniq(keys.filter(hit))
   }
@@ -320,8 +613,9 @@ function App() {
       handleDirtyChange(key, false) // close 不触发 onDirtyChange
       localMetaRef.current.delete(key)
     }
-    // 删掉的正是当前这个：退回空白草稿。不引入「一个都没打开」这种没验证过的状态
-    if (active && keys.includes(active.key)) openScratch()
+    // 标签栏里同步移除这些文件的标签；删掉的正是激活的那个就退回空白草稿。
+    // 不引入「一个都没打开」这种没验证过的状态（其它没删的标签仍在栏里，不影响）。
+    if (dropTabsByKeys(keys)) openScratch()
     setNotice({ tone: 'info', text: t('notice.deleted', { name: entry.name }) })
   }
 
@@ -361,8 +655,8 @@ function App() {
       handleDirtyChange(key, false) // close 不触发 onDirtyChange
       localMetaRef.current.delete(key)
     }
-    // 当前打开的就是这棵树里的：退回空白草稿，和删除时一样
-    if (active && keys.includes(active.key)) openScratch()
+    // 标签栏同步移除；激活的那个就在这棵树里则退回空白草稿（和删除时一致）
+    if (dropTabsByKeys(keys)) openScratch()
     setNotice({ tone: 'info', text: t('notice.rootRemoved', { name: root.name }) })
   }
 
@@ -372,7 +666,10 @@ function App() {
    * lastModified 基线保留 —— 内容没变，没必要让 focus 时的对比误报一次外部改动。
    */
   async function handleRenamed(from: Entry, to: Entry) {
-    const activeKey = active?.key
+    // 收集「改名后每个旧 key → 新信息」的映射，最后统一刷一次 tabs / activeKey。
+    // 一个目录改名可能连带改多个已打开文件的 key（子树里的）。
+    const oldActive = active?.key
+    const tabUpdates = new Map<string, ActiveFile>()
     for (const oldKey of affectedKeys(from.path)) {
       const newPath = to.path + oldKey.slice(`local:${from.path}`.length)
       const newKey = `local:${newPath}`
@@ -386,20 +683,32 @@ function App() {
       localMetaRef.current.delete(oldKey)
       const handle = to.kind === 'file' ? to.handle : await resolveFilePath(newPath)
       if (handle && meta) {
-        localMetaRef.current.set(newKey, { handle, lastModified: meta.lastModified })
+        localMetaRef.current.set(newKey, {
+          handle,
+          lastModified: meta.lastModified,
+          encoding: meta.encoding,
+        })
       }
-      if (oldKey === activeKey) {
-        setActive((prev) =>
-          prev
-            ? {
-                ...prev,
-                key: newKey,
-                name,
-                language: language ?? prev.language,
-                handle: handle ?? undefined,
-              }
-            : prev
-        )
+      const existing = tabs.find((x) => x.key === oldKey)
+      if (existing) {
+        tabUpdates.set(oldKey, {
+          ...existing,
+          key: newKey,
+          name,
+          language: language ?? existing.language,
+          handle: handle ?? existing.handle,
+        })
+      }
+    }
+    if (tabUpdates.size > 0) {
+      setTabs((prev) =>
+        prev.map((x) => {
+          const upd = tabUpdates.get(x.key)
+          return upd ? upd : x
+        })
+      )
+      if (oldActive && tabUpdates.has(oldActive)) {
+        setActiveKey(tabUpdates.get(oldActive)!.key)
       }
     }
     setNotice({ tone: 'info', text: t('notice.renamed', { name: to.name }) })
@@ -416,6 +725,9 @@ function App() {
         // 撤销历史跟着它一起没 —— 换 model 就留不住，这里认了。
         editorRef.current?.close('scratch')
         handleDirtyChange('scratch', false) // close 不会触发 onDirtyChange
+        // 标签栏里那张「草稿」也撤掉 —— 它对应的 model 已关，留着会指到一个空标签。
+        // 新保存的本地文件此刻已是激活标签（openLocalFile 把它激活了），activeKey 不用动
+        setTabs((prev) => prev.filter((x) => x.key !== 'scratch'))
         setNotice({ tone: 'info', text: t('notice.saved', { name: entry.name }) })
       })
     },
@@ -715,7 +1027,7 @@ function App() {
         editorRef.current?.open({ key, value: text, language })
         // 同名文件再导入一次时内容可能不一样，而 open 不会覆盖已有 model
         editorRef.current?.replace(key, text)
-        setActive({ key, kind: 'imported', name: file.name, language })
+        openOrActivate({ key, kind: 'imported', name: file.name, language, encoding: 'UTF-8' })
         consoleRef.current?.clear()
       })
       .catch((err) =>
@@ -809,9 +1121,11 @@ function App() {
           })
           return
         }
-        const { text, lastModified } = await readTextFile(file.handle)
+        const { text, lastModified, encoding } = await readTextFile(file.handle)
         editorRef.current?.replace(file.key, text)
-        localMetaRef.current.set(file.key, { handle: file.handle, lastModified })
+        localMetaRef.current.set(file.key, { handle: file.handle, lastModified, encoding })
+        // 正在看的这个文件编码也可能被外部改过，顺手刷新对应标签 / 状态栏的编码
+        setTabs((prev) => prev.map((x) => (x.key === file.key ? { ...x, encoding } : x)))
         setNotice({ tone: 'info', text: t('notice.reloaded', { name: file.name }) })
       } catch {
         // 文件被删/被移走，等用户自己刷新目录，不用弹提示打扰
@@ -836,7 +1150,22 @@ function App() {
     setRunning(false)
   }
 
-  const dirty = active ? dirtyKeys.has(active.key) : false
+  // 底部状态栏左侧要展示「目录 + 文件名」，像 VS Code 那样一条横排、目录淡色文件名高亮。
+  // 只有 local（key=local:<相对根路径>）与 builtin（name 本身就是它相对 demo 根的子路径，
+  // 例如 overrides/promise-order.js）带目录可拆；导入 / 草稿没有目录归属，只显示裸名。
+  const footerLoc =
+    active == null
+      ? null
+      : (() => {
+          const logical =
+            active.kind === 'local'
+              ? displayPath(active.key.slice('local:'.length))
+              : active.name
+          const i = logical.lastIndexOf('/')
+          return i === -1
+            ? { dir: '', file: logical }
+            : { dir: logical.slice(0, i), file: logical.slice(i + 1) }
+        })()
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[var(--app-bg)] text-[var(--text-primary)]">
@@ -992,77 +1321,215 @@ function App() {
           onCloseRoot={(root) => void handleCloseRoot(root)}
         />
 
-        {/* 主区域：编辑器 + 输出 */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-3 md:flex-row">
+        {/* 主区域：编辑器 + 输出。铺满剩余空间，中间/外边不留距，两者可拖拽分栏 */}
+        <main
+          ref={mainRef}
+          className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+        >
           {/* 左：编辑器 */}
-          <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--panel-bg)] md:flex-[1.2]">
-            <div className="flex items-center justify-between gap-2 border-b border-[var(--border)] px-3 py-2">
-              <div className="flex min-w-0 items-center gap-2">
-                {/* 文件名用等宽字体：它是路径而不是散文，等宽下更好对齐扫读 */}
-                <Badge variant="outline" className="max-w-[260px] truncate font-mono font-normal">
-                  {/* 草稿的名字在这里现算，不用 active.name：那是 openScratch 时按当时的
-                      语言存下来的快照，切语言后会留着一个旧语言的标题 */}
-                  {active ? (active.kind === 'scratch' ? t('file.scratch') : active.name) : t('editor.noFile')}
-                </Badge>
-                {dirty && (
-                  <span
-                    className="text-[12px] text-[var(--accent-symbol)]"
-                    title={t('editor.dirty')}
+          <section
+            data-editor-pane
+            style={editorW === null ? undefined : { width: editorW, flex: '0 0 auto' }}
+            className={cn(
+              'flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--panel-bg)]',
+              editorW === null && 'flex-1'
+            )}
+          >
+            {/* 编辑器头部（单行，与 Console 头部同高同线）：左=可滚动标签区，右=动作簇。
+                动作不再单独叠一行，直接并进标签这行 —— 顶部只有一条，两块才显得是一整块 */}
+            {/* 头部单行，底边与 Console 头部同一根发丝线，两栏才像一整块。
+                激活 tab 用正文色底（--tab-active-bg），紧贴这条线向上与其连成一片 */}
+            <div className="flex h-9 shrink-0 items-stretch border-b border-[var(--border)]">
+              {/* 标签区（无左右箭头，滚动靠滚轮 / 悬浮进度条，同 VS Code）。
+                  外层用命名 group/tabs 控进度条浮现，避免它作为裸 .group 把每个 tab
+                  的 group-hover 一并点亮（那样整排关闭按钮会一起出现） */}
+              <div className="group/tabs relative min-w-0 flex-1">
+                <div
+                  ref={tabScrollRef}
+                  className="tabs-scrollbar absolute inset-0 flex items-stretch overflow-x-auto"
+                >
+              {tabs.map((tab) => {
+                const isActive = tab.key === activeKey
+                const dirtyTab = dirtyKeys.has(tab.key)
+                const tabName = tab.kind === 'scratch' ? t('file.scratch') : tab.name
+                return (
+                  <ContextMenu key={tab.key}>
+                    <ContextMenuTrigger asChild>
+                      <div
+                        data-active-tab={isActive ? 'true' : undefined}
+                        className={cn(
+                          // 激活：顶部主色横线 + 正文色底（向下融入编辑器）；非激活：浅一档底、
+                          // 顶部无横线。每个 tab 右侧都留一条细线作相邻分隔（含激活）
+                          'group flex min-w-0 shrink-0 items-stretch border-r border-r-[var(--border)]',
+                          isActive
+                            ? 'border-t-2 border-t-[var(--primary)] bg-[var(--tab-active-bg)]'
+                            : 'border-t-2 border-t-transparent bg-[var(--tab-inactive-bg)]'
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => switchTab(tab.key)}
+                          title={tabName}
+                          className={cn(
+                            'flex min-w-0 items-center gap-1.5 py-1.5 pl-2 pr-1 font-mono text-[12.5px]',
+                            isActive
+                              ? 'text-[var(--text-body)]'
+                              : 'text-[var(--text-muted)] hover:text-[var(--text-body)]'
+                          )}
+                        >
+                          <span className="max-w-[140px] truncate">{tabName}</span>
+                          {dirtyTab && (
+                            <span
+                              title={t('editor.dirty')}
+                              className="size-2 shrink-0 rounded-full bg-[var(--accent-symbol)]"
+                            />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={t('tab.closeAria', { name: tabName })}
+                          title={t('tab.close')}
+                          onClick={() => void closeTab(tab.key)}
+                          className={cn(
+                            'my-auto flex h-6 w-5 shrink-0 items-center justify-center rounded-sm text-[var(--text-faint)] transition-opacity hover:bg-[var(--panel-hover)] hover:text-[var(--text-body)]',
+                            isActive
+                              ? 'opacity-100'
+                              : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'
+                          )}
+                        >
+                          <Icon className="icon-[lucide--x] size-3.5" />
+                        </button>
+                      </div>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent
+                      className="min-w-[160px]"
+                      onCloseAutoFocus={(e) => e.preventDefault()}
+                    >
+                      <ContextMenuItem onSelect={() => void closeTab(tab.key)}>
+                        {t('tab.ctx.close')}
+                      </ContextMenuItem>
+                      <ContextMenuItem onSelect={() => void menuCloseOthers(tab.key)}>
+                        {t('tab.ctx.closeOthers')}
+                      </ContextMenuItem>
+                      <ContextMenuItem onSelect={() => void menuCloseToRight(tab.key)}>
+                        {t('tab.ctx.closeRight')}
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        variant="destructive"
+                        onSelect={() => void menuCloseAll()}
+                      >
+                        {t('tab.ctx.closeAll')}
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
+                )
+              })}
+                </div>
+                {/* 悬浮进度条：绝对贴容器底部、不占高度，方形直角、3px 半透明（同 VS Code），
+                    悬停标签栏才浮现；只在标签溢出时出现 */}
+                {tabBar.overflow && (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-transparent opacity-0 transition-opacity duration-150 group-hover/tabs:opacity-100"
                   >
-                    ●
-                  </span>
+                    <div
+                      className="h-full bg-[var(--border-strong)]/60"
+                      style={{ width: tabBar.w, marginLeft: tabBar.x }}
+                    />
+                  </div>
                 )}
               </div>
+              {/* 动作簇：保存/下载、停止、运行，针对当前激活文件，右端固定 */}
+              <div className="flex shrink-0 items-center gap-0.5 border-l border-[var(--border)] px-1.5">
               <div className="flex items-center gap-1">
                 {/* 草稿在开着本地目录时也能「保存」——存到侧边栏选中的那个目录里 */}
                 {active?.kind === 'local' || (active?.kind === 'scratch' && workspace.hasRoot) ? (
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon-sm"
                     onClick={() => void handleSave()}
                     disabled={saving}
-                    title={saving ? t('editor.saving') : undefined}
+                    title={saving ? t('editor.saving') : t('editor.save')}
+                    aria-label={saving ? t('editor.saving') : t('editor.save')}
                   >
                     <Icon className={`${saving ? 'icon-[lucide--loader-circle] animate-spin' : 'icon-[lucide--save]'}`} />
-                    {saving ? t('editor.saving') : t('editor.save')}
                   </Button>
                 ) : (
-                  <Button variant="ghost" size="sm" onClick={handleDownload} disabled={!active}>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={handleDownload}
+                    disabled={!active}
+                    title={t('editor.download')}
+                    aria-label={t('editor.download')}
+                  >
                     <Icon className="icon-[lucide--download]" />
-                    {t('editor.download')}
                   </Button>
                 )}
                 {/* 停止绝大多数时间是禁用态，用实心 destructive 会在工具栏里凭空压出一块
                     红色；改成 ghost + 红字，只在真的能点时才抢注意力 */}
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="icon-sm"
                   className="text-[var(--accent-error)] hover:bg-[var(--accent-error)]/10 hover:text-[var(--accent-error)]"
                   onClick={stopCode}
                   disabled={!running}
+                  title={t('editor.stop')}
+                  aria-label={t('editor.stop')}
                 >
                   <Icon className="icon-[lucide--square]" />
-                  {t('editor.stop')}
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={runCode}
-                  disabled={!runnable}
-                  title={runnable ? undefined : t('editor.runDisabled')}
+                {/* Run 禁用时按钮是 pointer-events-none，title 不弹；用外层 span 承载说明 */}
+                <span
+                  className="inline-flex"
+                  title={runnable ? t('editor.run') : t('editor.runDisabled')}
                 >
-                  <Icon className="icon-[lucide--play]" />
-                  Run
-                </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="text-[var(--primary)] hover:bg-[var(--primary)]/12 hover:text-[var(--primary)]"
+                    onClick={runCode}
+                    disabled={!runnable}
+                    aria-label={t('editor.run')}
+                  >
+                    <Icon className="icon-[lucide--play] [&_[data-slot=icon]]:size-3.5" />
+                  </Button>
+                </span>
+                </div>
               </div>
             </div>
             <div className="min-h-0 flex-1">
-              <Editor ref={editorRef} onDirtyChange={handleDirtyChange} onSave={handleSave} />
+              <Editor
+                ref={editorRef}
+                onDirtyChange={handleDirtyChange}
+                onSave={handleSave}
+                onCursorStatus={setCursor}
+              />
             </div>
           </section>
 
-          {/* 右：输出 */}
-          <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--panel-bg)]">
-            <div className="border-b border-[var(--border)] px-3 py-2 text-sm text-[var(--text-muted)]">
+          {/* 右：输出。Console 头部与编辑器头部同为 h-9 + 一条 border-b，两条底边落在
+              同一水平线，配合下方紧贴的分栏，两栏看起来像被中间一条发丝线分成的一整块 */}
+          {/* 拖拽分栏：命中区本身铺面板色，因此不露 app 背景、没有“暗缝”；两栏基本紧贴，
+              平时只留一根细缝线，鼠标放上去加粗到 4px 并亮主色，拖动时保持 hover 那个亮度 */}
+          <div
+            onPointerDown={startSplitDrag}
+            title={t('panes.resize')}
+            aria-label={t('panes.resize')}
+            className="group relative w-[5px] shrink-0 cursor-col-resize touch-none select-none bg-[var(--panel-bg)]"
+          >
+            <span
+              className={cn(
+                'absolute inset-y-0 left-1/2 -translate-x-1/2 transition-[width,background-color] duration-100',
+                splitting
+                  ? 'w-[4px] bg-[var(--primary)]/70'
+                  : 'w-px bg-[var(--border)] group-hover:w-[4px] group-hover:bg-[var(--primary)]/70'
+              )}
+            />
+          </div>
+          <section className="flex min-h-0 min-w-[220px] flex-1 flex-col overflow-hidden bg-[var(--panel-bg)]">
+            <div className="flex h-9 shrink-0 items-center border-b border-[var(--border)] px-3 text-[12.5px] tracking-wide text-[var(--text-muted)]">
               Console
             </div>
             <div className="min-h-0 flex-1">
@@ -1072,21 +1539,60 @@ function App() {
         </main>
       </div>
 
-      {/* 底部状态栏：右侧显示当前文件的语言（同 VS Code 右下角）。
-          语言跟随文件后缀自动判断（.ts→TypeScript、.js→JavaScript）。 */}
-      <footer className="flex shrink-0 items-center gap-3 border-t border-[var(--border)] bg-[var(--panel-bg)] px-4 py-1 text-[11px] text-[var(--text-faint)]">
-        <span className="min-w-0 flex-1 truncate">
-          {active ? t('statusbar.file', { name: active.name }) : t('statusbar.noFile')}
+      {/* 底部状态栏：左侧「目录 / 文件名」一段横排，目录和文件名同色（faint 淡灰），
+          只靠顺序与省略号传达层级，不抢注意力；右侧从左到右依次是光标 Ln, Col、缩进
+          （Spaces / Tab Size）、编码（本地文件按 BOM 推断）、换行符（LF / CRLF）和语言
+          （跟随后缀自动判断），同 VS Code 右下角。 */}
+      <footer className="flex shrink-0 items-baseline gap-3 border-t border-[var(--border)] bg-[var(--panel-bg)] px-4 py-1 text-[11px] text-[var(--text-faint)]">
+        <span className="flex min-w-0 flex-1 items-baseline">
+          {footerLoc ? (
+            <>
+              {footerLoc.dir ? (
+                <span
+                  className="min-w-0 truncate"
+                  title={`${footerLoc.dir}/${footerLoc.file}`}
+                >
+                  {footerLoc.dir}/
+                </span>
+              ) : null}
+              <span className="shrink-0">{footerLoc.file}</span>
+            </>
+          ) : (
+            <span className="truncate">{t('statusbar.noFile')}</span>
+          )}
         </span>
-        {active && (
-          <span
-            className="shrink-0 text-[var(--text-muted)]"
-            title={
-              language === 'typescript' ? t('statusbar.ts') : t('statusbar.js')
-            }
-          >
-            {language === 'typescript' ? 'TypeScript' : 'JavaScript'}
+        {active && cursor?.position && (
+          <span className="shrink-0">
+            {t('statusbar.ln', {
+              line: cursor.position.line,
+              col: cursor.position.column,
+            })}
           </span>
+        )}
+        {active && cursor && (
+          <span className="shrink-0">
+            {cursor.useTabs
+              ? t('statusbar.tabSize', { size: cursor.indentSize })
+              : t('statusbar.spaces', { size: cursor.indentSize })}
+          </span>
+        )}
+        {active && (
+          <>
+            <span className="shrink-0" title={active.encoding}>
+              {active.encoding}
+            </span>
+            <span aria-hidden className="h-3 w-px shrink-0 bg-[var(--border)]" />
+            <span className="shrink-0">{cursor?.eol ?? 'LF'}</span>
+            <span aria-hidden className="h-3 w-px shrink-0 bg-[var(--border)]" />
+            <span
+              className="shrink-0"
+              title={
+                language === 'typescript' ? t('statusbar.ts') : t('statusbar.js')
+              }
+            >
+              {language === 'typescript' ? 'TypeScript' : 'JavaScript'}
+            </span>
+          </>
         )}
       </footer>
 
