@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { resolve } from "path"
+import { resolve } from 'node:path'
 
-const monacoVs = resolve(__dirname, "node_modules/monaco-editor/esm/vs")
+const here = import.meta.dirname
+const monacoVs = resolve(here, 'node_modules/monaco-editor/esm/vs')
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -19,7 +20,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@": resolve(__dirname, "./src"),
+      "@": resolve(here, "./src"),
       "monaco-editor/esm/vs": monacoVs
     }
   }
