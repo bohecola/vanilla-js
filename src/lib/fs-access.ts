@@ -237,6 +237,29 @@ export interface LoadedFile {
   text: string
   /** 用于「外部改动检测」的基线：没有文件监听 API，只能靠比对 mtime */
   lastModified: number
+  /**
+   * 推断出的文件编码，只在底部状态栏展示用（VS Code 式）。
+   * 注意：Jotter 解码/写回固定走 UTF-8，这里只是「这个文件本来是什么编码」的标签，
+   * 并不改变读写行为 —— 有 BOM 的 UTF-16 文件读进来仍是按 UTF-8 解、会乱码，
+   * 只是状态栏能如实告诉你它的真实编码。
+   */
+  encoding: FileEncoding
+}
+
+/** 展示用的编码标签。名字本身是通用 ASCII 标识，不随界面语言翻译。 */
+export type FileEncoding = 'UTF-8' | 'UTF-8 with BOM' | 'UTF-16 LE' | 'UTF-16 BE'
+
+/**
+ * 只看文件头几个字节判断有没有 BOM，据此给出编码标签。
+ * 没 BOM 时无从区分 —— 按当前读盘行为一律当成 UTF-8 报。
+ * 传进来的是原始字节（不能拿按 UTF-8 解出来的字符串判断，UTF-16 解完就乱码了）。
+ */
+export function detectFileEncoding(lead: Uint8Array): FileEncoding {
+  const [b0, b1, b2, b3] = lead
+  if (b0 === 0xef && b1 === 0xbb && b2 === 0xbf) return 'UTF-8 with BOM'
+  if (b0 === 0xff && b1 === 0xfe && !(b2 === 0x00 && b3 === 0x00)) return 'UTF-16 LE'
+  if (b0 === 0xfe && b1 === 0xff) return 'UTF-16 BE'
+  return 'UTF-8'
 }
 
 /** 「340 KB」「1.2 MB」这种给人看的体积。导出是因为确认弹窗也要写这个数。 */
@@ -256,13 +279,17 @@ export async function readTextFile(handle: FileSystemFileHandle): Promise<Loaded
       max: formatSize(MAX_FILE_SIZE),
     })
   }
+  // 只看头几个字节判断编码；slice 出的是个新 File，读它的 arrayBuffer 只有几字节开销
+  const encoding = detectFileEncoding(
+    new Uint8Array(await file.slice(0, 4).arrayBuffer())
+  )
   const text = await file.text()
   // 二进制兜底：后缀表认不出的文件走不到这里，但 .txt 里塞二进制这种情况仍要拦。
   // NUL 字节在正常文本里不会出现，是最省事也最可靠的判据。
   if (text.includes('\u0000')) {
     throw new AppError('err.fs.binary', { name: handle.name })
   }
-  return { text, lastModified: file.lastModified }
+  return { text, lastModified: file.lastModified, encoding }
 }
 
 /** 写回磁盘，返回新的 mtime（顺带把外部改动检测的基线刷新掉）。 */
