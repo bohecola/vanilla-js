@@ -778,12 +778,14 @@ export default function Sidebar({
     if (!el) return
     const sh = el.scrollHeight
     const ch = el.clientHeight
-    const overflow = sh > ch
+    const h = Math.max(30, (ch * ch) / sh)
+    // 只有当内容真的多到值得滚（thumb 还能明显移动，而不只是差几个像素）才显示滚动条，
+    // 否则树收短后剩点边角余量也要弹一根几乎满高的条，很怪。
+    const overflow = sh - ch > 12 && ch - h > 16
     if (!overflow) {
       setVBar((p) => (p.overflow ? { y: 0, h: 0, overflow: false } : p))
       return
     }
-    const h = Math.max(30, (ch * ch) / sh)
     const maxScroll = sh - ch
     const y = (el.scrollTop / maxScroll) * (ch - h)
     setVBar((p) => (p.y === y && p.h === h && p.overflow ? p : { y, h, overflow: true }))
@@ -801,10 +803,10 @@ export default function Sidebar({
     }
   }, [updateVBar])
   // 树内容增删会让 scrollHeight 变化但不触发上面的 ResizeObserver（容器本身没变大），
-  // 所以每次提交后都重算一次（带守卫，值没变就不 set，避免多余渲染）。
+  // 所以每次渲染提交后都重算一次（带守卫，值没变就不 set，避免多余渲染）。
   useLayoutEffect(() => {
     updateVBar()
-  }, [updateVBar])
+  })
 
   // 竖向悬浮 thumb 可拖拽滚动（同 VS Code）：按住 thumb 上下拖，把 scrollTop 带过去。
   // thumb 位移 → scrollTop 的换算按「可滚动余量 / thumb 可走空间」的比值来。
