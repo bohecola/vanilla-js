@@ -748,6 +748,24 @@ export default function Sidebar({
   const [refreshing, setRefreshing] = useState(false)
   /** 正在拖动侧栏宽度：拖动全程把手会整条加粗变亮（同 VS Code 拖分栏） */
   const [dragging, setDragging] = useState(false)
+  // 边界 hover 高亮做「延迟」：鼠标刚移到边界先不高亮（否则想在边界旁拖滚动条时会立刻
+  // 弹粗线干扰），要停留一小会儿才亮（VS Code 同款）。拖动开始则立即亮。
+  const [resizeHover, setResizeHover] = useState(false)
+  const resizeHoverTimer = useRef<number | null>(null)
+  const clearResizeHoverTimer = () => {
+    if (resizeHoverTimer.current !== null) {
+      window.clearTimeout(resizeHoverTimer.current)
+      resizeHoverTimer.current = null
+    }
+  }
+  const armResizeHover = () => {
+    clearResizeHoverTimer()
+    resizeHoverTimer.current = window.setTimeout(() => setResizeHover(true), 180)
+  }
+  const disarmResizeHover = () => {
+    clearResizeHoverTimer()
+    setResizeHover(false)
+  }
 
   // ---- 目录列表竖向悬浮滚动条（同 VS Code：原生隐藏、不占宽，鼠标移到列表上才浮现）----
   const vScrollRef = useRef<HTMLDivElement | null>(null)
@@ -892,6 +910,8 @@ export default function Sidebar({
     const startX = e.clientX
     const startWidth = panel.getBoundingClientRect().width
     setDragging(true)
+    clearResizeHoverTimer()
+    setResizeHover(true)
     const onMove = (ev: PointerEvent) => {
       setWidth(clamp(startWidth + ev.clientX - startX, MIN_WIDTH, MAX_WIDTH))
     }
@@ -901,6 +921,8 @@ export default function Sidebar({
       document.body.style.removeProperty('cursor')
       document.body.style.removeProperty('user-select')
       setDragging(false)
+      clearResizeHoverTimer()
+      setResizeHover(false)
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -1274,15 +1296,17 @@ export default function Sidebar({
         aria-orientation="vertical"
         onPointerDown={startDrag}
         onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
+        onMouseEnter={armResizeHover}
+        onMouseLeave={disarmResizeHover}
         title={t('sidebar.resize')}
-        className="group absolute inset-y-0 right-0 z-10 w-[6px] cursor-col-resize"
+        className="absolute inset-y-0 right-0 z-10 w-[6px] cursor-col-resize"
       >
         <span
           className={cn(
             'absolute inset-y-0 right-0 transition-[width,background-color] duration-100',
-            dragging
+            dragging || resizeHover
               ? 'w-[4px] bg-[var(--primary)]/70'
-              : 'w-px bg-[var(--border)] group-hover:w-[4px] group-hover:bg-[var(--primary)]/70'
+              : 'w-px bg-[var(--border)]'
           )}
         />
       </div>
