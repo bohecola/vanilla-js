@@ -207,6 +207,8 @@ function App() {
   const tabScrollRef = useRef<HTMLDivElement | null>(null)
   /** 悬浮进度条几何：x/w 是 thumb 相对 track 的 left/宽（px），overflow 表示是否溢出 */
   const [tabBar, setTabBar] = useState({ x: 0, w: 0, overflow: false })
+  /** 正在拖 thumb：拖拽中即使鼠标移出标签区，进度条也保持显示（同 VS Code 的按住态） */
+  const [tabBarDragging, setTabBarDragging] = useState(false)
   const updateTabScrollState = useCallback(() => {
     const el = tabScrollRef.current
     if (!el) return
@@ -235,6 +237,7 @@ function App() {
     overlay.style.cssText =
       'position:fixed;inset:0;z-index:2147483647;touch-action:none;user-select:none;'
     document.body.appendChild(overlay)
+    setTabBarDragging(true)
     const move = (ev: PointerEvent) => {
       const el2 = tabScrollRef.current
       const st = tabBarDragRef.current
@@ -244,6 +247,7 @@ function App() {
       el2.scrollLeft = st.startLeft + (ev.clientX - st.startX) * ratio
     }
     const up = () => {
+      setTabBarDragging(false)
       overlay.remove()
       tabBarDragRef.current = null
       window.removeEventListener('pointermove', move)
@@ -1462,7 +1466,12 @@ function App() {
                   <div
                     aria-hidden
                     onPointerDown={startTabBarDrag}
-                    className="pointer-events-none absolute inset-x-0 bottom-0 h-[10px] touch-none opacity-0 transition-opacity duration-150 group-hover/tabs:pointer-events-auto group-hover/tabs:opacity-100"
+                    className={cn(
+                      'absolute inset-x-0 bottom-0 h-[10px] touch-none',
+                      tabBarDragging
+                        ? 'opacity-100'
+                        : 'pointer-events-none opacity-0 transition-opacity duration-150 group-hover/tabs:pointer-events-auto group-hover/tabs:opacity-100'
+                    )}
                   >
                     <div
                       className="pointer-events-none absolute bottom-0 h-[3px] bg-[var(--border-strong)]/60"

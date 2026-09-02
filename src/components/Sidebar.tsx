@@ -753,6 +753,8 @@ export default function Sidebar({
   const vScrollRef = useRef<HTMLDivElement | null>(null)
   /** thumb 几何：y=距容器顶偏移、h=高度（px），overflow 表示内容是否溢出 */
   const [vBar, setVBar] = useState({ y: 0, h: 0, overflow: false })
+  /** 正在拖 thumb：拖拽中即使鼠标移出列表，滚动条也保持显示（同 VS Code 的按住态） */
+  const [vBarDragging, setVBarDragging] = useState(false)
   const updateVBar = useCallback(() => {
     const el = vScrollRef.current
     if (!el) return
@@ -800,6 +802,7 @@ export default function Sidebar({
     overlay.style.cssText =
       'position:fixed;inset:0;z-index:2147483647;touch-action:none;user-select:none;'
     document.body.appendChild(overlay)
+    setVBarDragging(true)
     const move = (ev: PointerEvent) => {
       const el2 = vScrollRef.current
       const st = vDragRef.current
@@ -810,6 +813,7 @@ export default function Sidebar({
       el2.scrollTop = st.startTop + (ev.clientY - st.startY) * ratio
     }
     const up = () => {
+      setVBarDragging(false)
       overlay.remove()
       vDragRef.current = null
       window.removeEventListener('pointermove', move)
@@ -1233,7 +1237,12 @@ export default function Sidebar({
           <div
             aria-hidden
             onPointerDown={startVBarDrag}
-            className="pointer-events-none absolute inset-y-0 right-0 w-[10px] touch-none opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100"
+            className={cn(
+              'absolute inset-y-0 right-0 w-[10px] touch-none',
+              vBarDragging
+                ? 'opacity-100'
+                : 'pointer-events-none opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100'
+            )}
           >
             <div
               className="pointer-events-none absolute right-0 w-[4px] bg-[var(--border-strong)]/60"
