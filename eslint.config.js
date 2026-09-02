@@ -19,6 +19,14 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // react-hooks v7 的 recommended 把一批 React Compiler 启发式规则设成了 error。
+      // 这些规则基于「React Compiler 记忆化」的假设，对这份先有代码（刻意用 live ref
+      // 避免闭包过期、相互引用的 useCallback 按需排列、手写记忆化）会产生误报。
+      // 它们是编译器层面的建议而非经典的 hooks 正确性检查，故关掉；rules-of-hooks 与
+      // exhaustive-deps 这些真正的检查仍保留。
+      'react-hooks/immutability': 'off',
+      'react-hooks/preserve-manual-memoization': 'off',
+      'react-hooks/set-state-in-effect': 'off',
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },

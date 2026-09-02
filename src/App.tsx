@@ -335,6 +335,10 @@ function App() {
         }
       }
     },
+    // handleDirtyChange / openScratch 在本渲染作用域里声明得比这里靠后；把它们加进依赖数组
+    // 会在渲染期求值时抛 TDZ（先访问后声明），故此处有意省略。closeTab 只在事件里触发，
+    // 拿到的都是 live ref / 最新值，不会被「旧闭包」坑到。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [confirm, t]
   )
 
@@ -398,6 +402,8 @@ function App() {
         }
       }
     },
+    // 同 closeTab：handleDirtyChange / openScratch 声明在本函数靠后，加入 deps 会触发 TDZ。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [confirm, t]
   )
 
@@ -536,7 +542,7 @@ function App() {
         })
       }
     },
-    [t]
+    [t, openOrActivate]
   )
 
   const openLocalFile = useCallback(
@@ -915,7 +921,6 @@ function App() {
         setNotice({ tone: 'error', text: messageOf(err, t) })
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [confirm, t, workspace.roots]
   )
 
