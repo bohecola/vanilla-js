@@ -50,4 +50,4 @@ pnpm lint    # 代码检查（--max-warnings 0，任何告警都会失败）
 
 在线地址：[playground.deore.me](https://playground.deore.me/)
 
-![Jotter 界面预览](/src/assets/imgs/preview.png?v=3)
+![Jotter 界面预览](/src/assets/imgs/preview.png?v=4)
