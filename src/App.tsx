@@ -230,6 +230,12 @@ function App() {
     e.preventDefault()
     tabBarDragRef.current = { startX: e.clientX, startLeft: el.scrollLeft }
     const prevCursor = document.body.style.cursor
+    // 全屏透明覆盖层：拖拽期间把 grabbing 光标钉在最上层，鼠标移到哪（哪怕离开滚动条、
+    // 悬到有自己 cursor 的元素上）都保持「点中拖拽」观感，松开才移除（同 VS Code）。
+    const overlay = document.createElement('div')
+    overlay.style.cssText =
+      'position:fixed;inset:0;cursor:grabbing;z-index:2147483647;touch-action:none;user-select:none;'
+    document.body.appendChild(overlay)
     document.body.style.cursor = 'grabbing'
     const move = (ev: PointerEvent) => {
       const el2 = tabScrollRef.current
@@ -241,6 +247,7 @@ function App() {
     }
     const up = () => {
       document.body.style.cursor = prevCursor
+      overlay.remove()
       tabBarDragRef.current = null
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
