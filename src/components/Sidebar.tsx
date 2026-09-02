@@ -1260,14 +1260,14 @@ export default function Sidebar({
             aria-hidden
             onPointerDown={startVBarDrag}
             className={cn(
-              'absolute inset-y-0 right-0 w-[16px] touch-none',
+              'absolute inset-y-0 right-0 w-[18px] touch-none',
               vBarDragging
                 ? 'opacity-100'
                 : 'pointer-events-none opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100'
             )}
           >
             <div
-              className="pointer-events-none absolute right-0 w-[10px] bg-[var(--border-strong)]/60"
+              className="pointer-events-none absolute right-[2px] w-[12px] bg-[var(--border-strong)]/60"
               style={{ top: vBar.y, height: vBar.h }}
             />
           </div>
