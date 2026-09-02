@@ -79,6 +79,16 @@ html {
   --app-bg: #020617;   /* slate-950 */
   --panel-bg: #0f172a; /* slate-900 */
   --panel-hover: #1e293b; /* slate-800 */
+  /* 列表选中态底色（侧边栏当前选中行）：比 hover 明显一档、半透明泛蓝，同 VS Code
+     那层「选中即铺整行背景」的处理，不加描边不加粗 */
+  --list-active: rgba(56, 189, 248, 0.14);
+  /* 选中行的细焦点描边色（VS Code 在选中行上描一圈很细的框） */
+  --list-active-ring: rgba(56, 189, 248, 0.8);
+
+  /* 编辑器顶部标签（深色主题）：激活 tab 用最深页面背景色(--app-bg)，非激活 tab 用
+     较亮的正文色(--panel-bg)，与上一版对调 */
+  --tab-active-bg: var(--app-bg);
+  --tab-inactive-bg: var(--panel-bg);
 
   /* 边框 / 分割线 */
   --border: #1e293b;   /* slate-800 */
@@ -130,6 +140,13 @@ html {
   --app-bg: #f1f5f9;     /* slate-100 */
   --panel-bg: #ffffff;   /* white */
   --panel-hover: #e2e8f0; /* slate-200 */
+  --list-active: rgba(2, 132, 199, 0.12);
+  --list-active-ring: rgba(2, 132, 199, 0.85);
+
+  /* 编辑器顶部标签（浅色主题）：选中 tab 用明显一点的灰蓝底(--panel-hover slate-200)，
+     让它“凸出”可一眼认出；未选中 tab 用接近白的很浅灰(--slate-50)，淡下去 */
+  --tab-active-bg: var(--panel-hover);
+  --tab-inactive-bg: #f8fafc;
 
   --border: #cbd5e1;     /* slate-300 */
   --border-strong: #94a3b8; /* slate-400 */
@@ -251,4 +268,25 @@ html {
   cursor:
     url('/cursor-ibeam.svg') 16 16,
     text;
+}
+
+/*
+  标签栏横向滚动容器：原生滚动条彻底隐藏（不占高度也不画出来）。
+  进度条由 JS 渲染成悬浮在容器底部的一条浮层细条（见 App.tsx 的 tabScrollBar），
+  悬停标签栏时才显现、且不占布局高度 —— 同 VS Code 的 tab 栏。
+  滚动本身（滚轮横滑 / 触摸板）始终可用。
+*/
+.tabs-scrollbar {
+  scrollbar-width: none;
+}
+.tabs-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 竖向列表滚动条同款隐藏：原生条不占宽度，改由 JS 悬浮 thumb（Sidebar）替代 */
+.v-scrollbar {
+  scrollbar-width: none;
+}
+.v-scrollbar::-webkit-scrollbar {
+  display: none;
 }
