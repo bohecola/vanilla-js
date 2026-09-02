@@ -794,6 +794,8 @@ export default function Sidebar({
     if (!el) return
     e.preventDefault()
     vDragRef.current = { startY: e.clientY, startTop: el.scrollTop }
+    const prevCursor = document.body.style.cursor
+    document.body.style.cursor = 'grabbing'
     const move = (ev: PointerEvent) => {
       const el2 = vScrollRef.current
       const st = vDragRef.current
@@ -804,6 +806,7 @@ export default function Sidebar({
       el2.scrollTop = st.startTop + (ev.clientY - st.startY) * ratio
     }
     const up = () => {
+      document.body.style.cursor = prevCursor
       vDragRef.current = null
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
@@ -1226,7 +1229,7 @@ export default function Sidebar({
           <div
             aria-hidden
             onPointerDown={startVBarDrag}
-            className="pointer-events-none absolute inset-y-0 right-0 w-[10px] touch-none opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-hover:cursor-grab active:cursor-grabbing"
+            className="pointer-events-none absolute inset-y-0 right-0 w-[10px] touch-none opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100"
           >
             <div
               className="pointer-events-none absolute right-0 w-[4px] bg-[var(--border-strong)]/60"

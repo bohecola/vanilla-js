@@ -229,6 +229,8 @@ function App() {
     if (!el) return
     e.preventDefault()
     tabBarDragRef.current = { startX: e.clientX, startLeft: el.scrollLeft }
+    const prevCursor = document.body.style.cursor
+    document.body.style.cursor = 'grabbing'
     const move = (ev: PointerEvent) => {
       const el2 = tabScrollRef.current
       const st = tabBarDragRef.current
@@ -238,6 +240,7 @@ function App() {
       el2.scrollLeft = st.startLeft + (ev.clientX - st.startX) * ratio
     }
     const up = () => {
+      document.body.style.cursor = prevCursor
       tabBarDragRef.current = null
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
@@ -1455,7 +1458,7 @@ function App() {
                   <div
                     aria-hidden
                     onPointerDown={startTabBarDrag}
-                    className="pointer-events-none absolute inset-x-0 bottom-0 h-[10px] touch-none opacity-0 transition-opacity duration-150 group-hover/tabs:pointer-events-auto group-hover/tabs:opacity-100 group-hover/tabs:cursor-grab active:cursor-grabbing"
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-[10px] touch-none opacity-0 transition-opacity duration-150 group-hover/tabs:pointer-events-auto group-hover/tabs:opacity-100"
                   >
                     <div
                       className="pointer-events-none absolute bottom-0 h-[3px] bg-[var(--border-strong)]/60"
