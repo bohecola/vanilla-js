@@ -8,6 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -49,8 +50,8 @@ import {
   type InterruptedSave,
   type ResidualDemo,
 } from './hooks/useWorkspace'
-import { messageOf, useI18n, type LangMode } from '@/i18n/context'
-import { useTheme, type ThemeMode } from './theme/index.tsx'
+import { messageOf, useI18n, LANGS, type LangMode } from '@/i18n/context'
+import { useTheme, type Accent, type ThemeMode, ACCENTS } from './theme/index.tsx'
 
 const ACTIVE_KEY = 'jotter:activeKey'
 /** 「把全部 Demo 存到本地」时建的总目录名。纯 ASCII，跨系统都安全 */
@@ -111,13 +112,29 @@ function withLanguageExt(filename: string, language: string): string {
   return filename.replace(/\.(js|mjs|cjs|jsx|ts|tsx|mts|cts)$/i, `.${ext}`)
 }
 
+// 配色下拉里每个选项的「线稿小图标 + 它的颜色」：像儿童绘本里克制的一枚枚小画，干净又俏皮。
+// icon 存完整类名字面量（icon-[lucide--…]），Tailwind 需要源码里逐字出现才扫得到。
+// 标签文案走 i18n（header.accent.*）。
+type AccentLabelKey =
+  | 'header.accent.blue'
+  | 'header.accent.pink'
+  | 'header.accent.orange'
+  | 'header.accent.green'
+
+const ACCENT_META: Record<Accent, { icon: string; color: string; labelKey: AccentLabelKey }> = {
+  blue: { icon: 'icon-[lucide--droplet]', color: '#0ea5e9', labelKey: 'header.accent.blue' },
+  pink: { icon: 'icon-[lucide--flower]', color: '#ec4899', labelKey: 'header.accent.pink' },
+  orange: { icon: 'icon-[lucide--sun]', color: '#f97316', labelKey: 'header.accent.orange' },
+  green: { icon: 'icon-[lucide--leaf]', color: '#22c55e', labelKey: 'header.accent.green' },
+}
+
 function App() {
   const templates = listTemplates()
   const workspace = useWorkspace()
   // 这两个方法在 effect / useCallback 里用，摘出来当依赖：整个 workspace 当依赖的话
   // 每次目录树变动都会重跑，而这两处只关心「路径怎么解析」
   const { resolveFilePath, displayPath } = workspace
-  const { mode, setMode } = useTheme()
+  const { mode, setMode, accent, setAccent } = useTheme()
   // 主题那边已经占了 mode / setMode，语言这两个改名区分
   const { mode: langMode, setMode: setLangMode, t } = useI18n()
   const confirm = useConfirm()
@@ -172,9 +189,12 @@ function App() {
     setSplitting(true)
     const prevUserSelect = document.body.style.userSelect
     document.body.style.userSelect = 'none' // 拖动中不选中文本
+    // RTL（阿拉伯语）下 main 内的左右分栏会镜像：编辑器到右侧、输出到左侧，
+    // 拖动方向与 LTR 相反，故增量取反（符号只在 RTL 下翻）。
+    const sign = document.documentElement.dir === 'rtl' ? -1 : 1
 
     const onMove = (ev: PointerEvent) => {
-      const raw = startW + (ev.clientX - startX)
+      const raw = startW + sign * (ev.clientX - startX)
       const d = raw - half
       let target = raw
       if (latched) {
@@ -205,10 +225,23 @@ function App() {
 
   // ---- 标签栏横向滚动（同 VS Code：原生滚动条隐藏、不占高度，用悬浮细条替代）----
   const tabScrollRef = useRef<HTMLDivElement | null>(null)
-  /** 悬浮进度条几何：x/w 是 thumb 相对 track 的 left/宽（px），overflow 表示是否溢出 */
+  /** 悬浮进度条几何：x/w 是 thumb 相对 track 的 inline-start 的距离/宽（px）。x 是「距起点」，
+      渲染端用逻辑 insetInlineStart 定位，因此 LTR（起点在左）和 RTL（起点在右）都对。 */
   const [tabBar, setTabBar] = useState({ x: 0, w: 0, overflow: false })
   /** 正在拖 thumb：拖拽中即使鼠标移出标签区，进度条也保持显示（同 VS Code 的按住态） */
   const [tabBarDragging, setTabBarDragging] = useState(false)
+  // Blink 下 RTL 溢出容器的 scrollLeft 是负区间 [-max, 0]（0=起点/最右，-max=尽头/最左），
+  // LTR 才是 [0, max]。把它归一成「0=起点、1=尽头」的进度，避免各处各自猜符号。
+  const tabIsRtl = () => document.documentElement.dir === 'rtl'
+  const tabProgress = (el: HTMLElement) => {
+    const max = el.scrollWidth - el.clientWidth
+    if (max <= 0) return 0
+    return tabIsRtl() ? -el.scrollLeft / max : el.scrollLeft / max
+  }
+  const tabSetProgress = (el: HTMLElement, p: number) => {
+    const max = el.scrollWidth - el.clientWidth
+    el.scrollLeft = tabIsRtl() ? -p * max : p * max
+  }
   const updateTabScrollState = useCallback(() => {
     const el = tabScrollRef.current
     if (!el) return
@@ -221,16 +254,18 @@ function App() {
     }
     // thumb 宽 ≈ track × (track / scrollWidth)，保个下限好抓
     const w = Math.max(36, (track * track) / Math.max(el.scrollWidth, 1))
-    const x = (el.scrollLeft / maxScroll) * (track - w)
+    const x = tabProgress(el) * (track - w)
     setTabBar({ x, w, overflow: true })
   }, [])
   // 底部悬浮 thumb 可拖拽横滚（同 VS Code）：按住左右拖，把 scrollLeft 带过去。
-  const tabBarDragRef = useRef<{ startX: number; startLeft: number } | null>(null)
+  const tabBarDragRef = useRef<{ startX: number; startProgress: number } | null>(null)
   const startTabBarDrag = (e: React.PointerEvent) => {
     const el = tabScrollRef.current
     if (!el) return
     e.preventDefault()
-    tabBarDragRef.current = { startX: e.clientX, startLeft: el.scrollLeft }
+    // 记录起点归一化进度 + 指针物理 x。拖动中把「thumb 移动的物理像素」换算成内容像素，
+    // 用 tabSetProgress 写回 —— LTR/RTL 的符号都由它统一（thumb 从 inline-start 起算）。
+    tabBarDragRef.current = { startX: e.clientX, startProgress: tabProgress(el) }
     // 全屏透明覆盖层：拖动期间盖在最上层，避免鼠标移到别处触发 hover / 选中文本，
     // 让拖动稳定跟手。不加手型光标 —— 保持系统默认指针（同 VS Code）。松开移除。
     const overlay = document.createElement('div')
@@ -243,8 +278,12 @@ function App() {
       const st = tabBarDragRef.current
       if (!el2 || !st) return
       const track = el2.clientWidth
-      const ratio = (el2.scrollWidth - track) / Math.max(track - tabBar.w, 1)
-      el2.scrollLeft = st.startLeft + (ev.clientX - st.startX) * ratio
+      const maxPx = el2.scrollWidth - track
+      // 物理拖动增量 → 「toward-end」像素增量：LTR 前进方向=右(+)，RTL 前进方向=左(-)。
+      const towardEndPx = (tabIsRtl() ? -1 : 1) * (ev.clientX - st.startX)
+      const pxPerThumb = maxPx / Math.max(track - tabBar.w, 1)
+      const next = st.startProgress * maxPx + towardEndPx * pxPerThumb
+      tabSetProgress(el2, maxPx <= 0 ? 0 : Math.min(1, Math.max(0, next / maxPx)))
     }
     const up = () => {
       setTabBarDragging(false)
@@ -268,7 +307,12 @@ function App() {
     const onWheel = (e: WheelEvent) => {
       if (el.scrollWidth <= el.clientWidth) return // 没溢出就交给页面正常滚动
       e.preventDefault()
-      el.scrollLeft += e.deltaY + e.deltaX
+      // 用「距尽头的像素（0..max）」做增量，方向符号交给归一化 helper：
+      // LTR 下等价于 scrollLeft += deltaY + deltaX；RTL 下自动取对符号。
+      const max = el.scrollWidth - el.clientWidth
+      const cur = tabProgress(el) * max
+      const next = Math.min(max, Math.max(0, cur + e.deltaY + e.deltaX))
+      tabSetProgress(el, max <= 0 ? 0 : next / max)
       updateTabScrollState()
     }
     el.addEventListener('wheel', onWheel, { passive: false })
@@ -1233,12 +1277,11 @@ function App() {
         <div className="ml-auto flex items-center gap-2">
           {/* 语言显示移到底部状态栏（见页面底部），右上角不再放语言徽标 */}
 
-          {/* 语言。形状与右边的主题下拉完全同构（三态 + 跟随系统）。
-              触发器固定用 languages 图标，不随当前值变：「中 / En」没有 sun/moon 那样
-              自明的一对图标，图标一直换反而看不出这个按钮是干什么用的。
-              三项都不配图标（主题那边三项都有）—— 只给「跟随系统」挂一个 monitor 的话，
-              另外两项的文字会比它少缩进一个图标的宽度，三行对不齐。
-              两个语言名刻意不翻译：看不懂当前界面语言的人，正需要用目标语言认出自己那一项。 */}
+          {/* 语言。形状与右边的主题下拉完全同构（多态 + 跟随系统）。
+              触发器固定用 languages 图标，不随当前值变 —— 没有哪两个图标能自明地
+              代表「语言」这种概念，图标一直换反而看不出按钮是干什么的。
+              各语言项的名字刻意不翻译（用各自母语写）：看不懂当前界面语言的人，
+              正需要用目标语言认出自己那一项。 */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -1251,16 +1294,70 @@ function App() {
                 <Icon className="icon-[lucide--languages]" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
               <DropdownMenuRadioGroup
                 value={langMode}
                 onValueChange={(value) => setLangMode(value as LangMode)}
               >
-                <DropdownMenuRadioItem value="zh">中文</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="en">English</DropdownMenuRadioItem>
+                {LANGS.map(({ value, label }) => (
+                  <DropdownMenuRadioItem key={value} value={value}>
+                    <span className="font-medium">{label}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+                <DropdownMenuSeparator />
                 <DropdownMenuRadioItem value="system">
+                  <Icon className="icon-[lucide--monitor]" />
                   {t('header.lang.system')}
                 </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* 配色：蓝 / 粉 / 橙 / 绿，配上面那个明暗一起用（蓝黑 / 粉白……）。
+              trigger 图标用当前配色的高亮主色来画，一眼看出现在是哪档色 */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                title={t('header.accent')}
+                aria-label={t('header.accent')}
+                className="text-[var(--text-muted)]"
+              >
+                <Icon className="icon-[lucide--palette]" style={{ color: 'var(--accent-number)' }} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[8.5rem]">
+              <DropdownMenuRadioGroup
+                value={accent}
+                onValueChange={(value) => setAccent(value as Accent)}
+              >
+                {/* 竖排列表：每行一枚代表该配色的线稿小图标 + 名字，像儿童绘本里克制的一排小画。
+                    当前配色不铺整行底色（那样会和相邻行的 hover 底贴在一起），改用在当前色里
+                    着色的名字 + 右端亮起的对勾来表达选中 —— 干净，且和悬停互不粘连 */}
+                {ACCENTS.map((a) => {
+                  const meta = ACCENT_META[a]
+                  const selected = a === accent
+                  return (
+                    <DropdownMenuRadioItem
+                      key={a}
+                      value={a}
+                      title={t(meta.labelKey)}
+                      className="gap-2.5 pr-3"
+                    >
+                      <Icon
+                        className={cn('size-4', meta.icon)}
+                        style={{ color: meta.color }}
+                      />
+                      <span
+                        className="min-w-0 flex-1"
+                        style={selected ? { color: meta.color } : undefined}
+                      >
+                        {t(meta.labelKey)}
+                      </span>
+                    </DropdownMenuRadioItem>
+                  )
+                })}
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1398,8 +1495,9 @@ function App() {
                         data-active-tab={isActive ? 'true' : undefined}
                         className={cn(
                           // 激活：顶部主色横线 + 正文色底（向下融入编辑器）；非激活：浅一档底、
-                          // 顶部无横线。每个 tab 右侧都留一条细线作相邻分隔（含激活）
-                          'group flex min-w-0 shrink-0 items-stretch border-r border-r-[var(--border)]',
+                          // 顶部无横线。每个 tab 行末都留一条细线作相邻分隔（含激活）。
+                          // 用 border-e：RTL（阿拉伯语）时该分隔自动落在正确一侧
+                          'group flex min-w-0 shrink-0 items-stretch border-e border-e-[var(--border)]',
                           isActive
                             ? 'border-t-2 border-t-[var(--primary)] bg-[var(--tab-active-bg)]'
                             : 'border-t-2 border-t-transparent bg-[var(--tab-inactive-bg)]'
@@ -1410,7 +1508,7 @@ function App() {
                           onClick={() => switchTab(tab.key)}
                           title={tabName}
                           className={cn(
-                            'flex min-w-0 items-center gap-1.5 py-1.5 pl-2 pr-1 font-mono text-[12.5px]',
+                            'flex min-w-0 items-center gap-1.5 py-1.5 ps-2 pe-1 font-mono text-[12.5px]',
                             isActive
                               ? 'text-[var(--text-body)]'
                               : 'text-[var(--text-muted)] hover:text-[var(--text-body)]'
@@ -1480,13 +1578,14 @@ function App() {
                   >
                     <div
                       className="pointer-events-none absolute bottom-0 h-[3px] bg-[var(--border-strong)]/60"
-                      style={{ width: tabBar.w, left: tabBar.x }}
+                      style={{ width: tabBar.w, insetInlineStart: tabBar.x }}
                     />
                   </div>
                 )}
               </div>
-              {/* 动作簇：保存/下载、停止、运行，针对当前激活文件，右端固定 */}
-              <div className="flex shrink-0 items-center gap-0.5 border-l border-[var(--border)] px-1.5">
+              {/* 动作簇：保存/下载、停止、运行，针对当前激活文件，固定在一端。用 border-s：
+                  RTL 下该分隔自动落在朝向标签区的一侧 */}
+              <div className="flex shrink-0 items-center gap-0.5 border-s border-[var(--border)] px-1.5">
               <div className="flex items-center gap-1">
                 {/* 草稿在开着本地目录时也能「保存」——存到侧边栏选中的那个目录里 */}
                 {active?.kind === 'local' || (active?.kind === 'scratch' && workspace.hasRoot) ? (

@@ -7,7 +7,7 @@
 */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
-import { I18nContext, STORAGE_KEY, createT, readLangMode, systemLang, type LangMode } from './context'
+import { I18nContext, STORAGE_KEY, createT, dirOf, readLangMode, systemLang, type LangMode } from './context'
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<LangMode>(readLangMode)
@@ -46,13 +46,15 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, [mode])
 
   /*
-    <html lang> 与标题。运行期只由这里写，别处不要碰 document.title。
+    <html lang>、标题与排版方向。运行期只由这里写，别处不要碰 document.title。
+    排版方向（阿拉伯语 rtl）也要写回 <html dir>，CSS 没有跟着语言走的内置规则。
     首帧那一下由 index.html 的内联脚本负责（否则英文用户每次打开都会先闪一帧中文标题）。
   */
   useEffect(() => {
     document.documentElement.lang = t('html.lang')
+    document.documentElement.dir = dirOf(lang)
     document.title = t('html.title')
-  }, [t])
+  }, [t, lang])
 
   const value = useMemo(() => ({ mode, setMode, lang, t }), [mode, lang, t])
 

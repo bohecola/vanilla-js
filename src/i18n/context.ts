@@ -12,14 +12,62 @@ import { createContext, useContext } from 'react'
 import { AppError, type Problem } from '@/lib/app-error'
 
 import { en } from './dict.en'
+import { fr } from './dict.fr'
+import { de } from './dict.de'
+import { it } from './dict.it'
+import { ko } from './dict.ko'
+import { ja } from './dict.ja'
+import { vi } from './dict.vi'
+import { pt } from './dict.pt'
+import { ar } from './dict.ar'
+import { zhHant } from './dict.zhHant'
 import { zh, type Dict } from './dict.zh'
 
-/** 真正生效的语言（只有这两种，不含 system） */
-export type Lang = 'zh' | 'en'
+/**
+ * 真正生效的语言（不含 system）：
+ *   zh      简体中文   en   English        fr  Français
+ *   de      Deutsch     it   Italiano      ko   한국어
+ *   ja      日本語      vi   Tiếng Việt    pt   Português
+ *   ar      العربية     zhHant  繁體中文
+ * 键名即 localStorage 里存的取值（zh 沿用历史键值，老用户的偏好不用迁移）。
+ */
+export type Lang = 'zh' | 'zhHant' | 'en' | 'fr' | 'de' | 'it' | 'ko' | 'ja' | 'vi' | 'pt' | 'ar'
 /** 用户的选择：明确指定，或跟随系统 —— 与 ThemeMode 同构 */
 export type LangMode = Lang | 'system'
 
-const DICTS: Record<Lang, Dict> = { zh, en }
+const DICTS: Record<Lang, Dict> = {
+  zh,
+  zhHant,
+  en,
+  fr,
+  de,
+  it,
+  ko,
+  ja,
+  vi,
+  pt,
+  ar,
+}
+
+/** 按 html 语言的 BCP 47 标签把某语言归位到我们的 Lang；认不出就回英文。 */
+function langFromTag(tag: string): Lang {
+  const primary = tag.split('-')[0].toLowerCase()
+  if (primary === 'zh') {
+    // 台湾 / 香港 / 澳门按繁中；其余 zh（大陆、新加坡简体区）按简体
+    const region = (tag.split('-')[1] || '').toUpperCase()
+    return region === 'TW' || region === 'HK' || region === 'MO' ? 'zhHant' : 'zh'
+  }
+  if (primary === 'en') return 'en'
+  if (primary === 'fr') return 'fr'
+  if (primary === 'de') return 'de'
+  if (primary === 'it') return 'it'
+  if (primary === 'ko') return 'ko'
+  if (primary === 'ja') return 'ja'
+  if (primary === 'vi') return 'vi'
+  if (primary === 'pt') return 'pt'
+  if (primary === 'ar') return 'ar'
+  return 'en'
+}
 
 /*
   与 index.html 首帧脚本里的键名一致，改这里要一起改那边。
@@ -44,17 +92,17 @@ export function createT(lang: Lang): T {
   }
 }
 
-/** 浏览器语言：zh 开头给中文，其余一律英文 */
+/** 浏览器语言：按 navigator.language 就近归到我们支持的语言，认不出回英文。 */
 export function systemLang(): Lang {
   const raw = typeof navigator === 'undefined' ? '' : navigator.language
-  return /^zh/i.test(raw) ? 'zh' : 'en'
+  return langFromTag(raw)
 }
 
-/** 读用户存过的选择。存的不是这三个字面量之一（或读不出来）就回落到「跟随系统」。 */
+/** 读用户存过的选择。存的不是受支持字面量之一（或读不出来）就回落到「跟随系统」。 */
 export function readLangMode(): LangMode {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved === 'zh' || saved === 'en' || saved === 'system') return saved
+    if (saved !== null && (saved === 'system' || saved in DICTS)) return saved as LangMode
   } catch {
     // 隐私模式下 localStorage 直接抛，按默认走
   }
@@ -67,6 +115,29 @@ interface I18nContextValue {
   lang: Lang
   t: T
 }
+
+/** 阿拉伯语从右往左，其余从左往右。 */
+export function dirOf(lang: Lang): 'rtl' | 'ltr' {
+  return lang === 'ar' ? 'rtl' : 'ltr'
+}
+
+/** 语言下拉的固定选项：名字用各自母语写，不翻译（看不懂当前界面语言的人，
+    正需要用目标语言认出自己那一项），与主题/配色的设计一致。顺序即菜单顺序 ——
+    按母语名排：拉丁字母书写的名字在前（按字母序），其余按码位紧随其后。
+    结果就是常见的「拉丁语系靠前、中文/日/韩/阿拉伯靠后」观感。 */
+export const LANGS: { value: Lang; label: string }[] = [
+  { value: 'de', label: 'Deutsch' }, // German
+  { value: 'en', label: 'English' }, // English
+  { value: 'fr', label: 'Français' }, // French
+  { value: 'it', label: 'Italiano' }, // Italian
+  { value: 'pt', label: 'Português' }, // Portuguese
+  { value: 'vi', label: 'Tiếng Việt' }, // Vietnamese
+  { value: 'ar', label: 'العربية' }, // Arabic
+  { value: 'ja', label: '日本語' }, // Japanese
+  { value: 'zh', label: '简体中文' }, // Chinese (Simplified)
+  { value: 'zhHant', label: '繁體中文' }, // Chinese (Traditional)
+  { value: 'ko', label: '한국어' }, // Korean
+]
 
 export const I18nContext = createContext<I18nContextValue | null>(null)
 

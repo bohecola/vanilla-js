@@ -911,11 +911,14 @@ export default function Sidebar({
     e.preventDefault()
     const startX = e.clientX
     const startWidth = panel.getBoundingClientRect().width
+    // RTL（阿拉伯语）下面板贴右侧、把手在其 inline-end（左）缘，拖动的方向与 LTR 相反，
+    // 所以把增量取反：往左拖变宽时 clientX 减小，-deltaX 才对应增宽。
+    const sign = document.documentElement.dir === 'rtl' ? -1 : 1
     setDragging(true)
     clearResizeHoverTimer()
     setResizeHover(true)
     const onMove = (ev: PointerEvent) => {
-      setWidth(clamp(startWidth + ev.clientX - startX, MIN_WIDTH, MAX_WIDTH))
+      setWidth(clamp(startWidth + sign * (ev.clientX - startX), MIN_WIDTH, MAX_WIDTH))
     }
     const onUp = () => {
       window.removeEventListener('pointermove', onMove)
@@ -935,7 +938,7 @@ export default function Sidebar({
 
   if (collapsed) {
     return (
-      <div className="flex shrink-0 flex-col items-center border-r border-[var(--border)] bg-[var(--panel-bg)] px-1.5 py-2">
+      <div className="flex shrink-0 flex-col items-center border-e border-[var(--border)] bg-[var(--panel-bg)] px-1.5 py-2">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -1074,7 +1077,7 @@ export default function Sidebar({
             {t('sidebar.unsupported', { label: t('header.import') })}
           </p>
         ) : workspace.roots.length === 0 ? (
-          <div className="px-2 pb-2">
+          <div className="px-2 pb-2 pt-2">
             <Button variant="secondary" size="sm" onClick={() => void workspace.pick()}>
               <Icon className="icon-[codicon--folder-opened]" />
               {t('sidebar.openFolder')}
@@ -1262,14 +1265,14 @@ export default function Sidebar({
             aria-hidden
             onPointerDown={startVBarDrag}
             className={cn(
-              'absolute inset-y-0 right-0 w-[18px] touch-none',
+              'absolute inset-y-0 end-0 w-[18px] touch-none',
               vBarDragging
                 ? 'opacity-100'
                 : 'pointer-events-none opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100'
             )}
           >
             <div
-              className="pointer-events-none absolute right-[2px] w-[12px] bg-[var(--border-strong)]/60"
+              className="pointer-events-none absolute end-[2px] w-[12px] bg-[var(--border-strong)]/60"
               style={{ top: vBar.y, height: vBar.h }}
             />
           </div>
@@ -1290,8 +1293,9 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* 拖拽把手：命中区 6px 好抓。侧栏右缘那根边界发丝线就由这根亮线承担（容器不再画
-          border-r），贴 right-0 = 真实边界。平时 w-px 发丝线；鼠标放上去（hover）加粗到
+      {/* 拖拽把手：命中区 6px 好抓。侧栏朝主区那缘的边界发丝线由这根亮线承担（容器不再画
+          border），贴 end-0（= 逻辑 inline-end）对齐真实边界 —— LTR 在右缘、RTL 在左缘。
+          平时 w-px 发丝线；鼠标放上去（hover）加粗到
           4px 并亮主色；按住拖动保持 hover 亮度（不再更亮）。 */}
       <div
         role="separator"
@@ -1301,11 +1305,11 @@ export default function Sidebar({
         onMouseEnter={armResizeHover}
         onMouseLeave={disarmResizeHover}
         title={t('sidebar.resize')}
-        className="absolute inset-y-0 right-0 z-10 w-[6px] cursor-col-resize"
+        className="absolute inset-y-0 end-0 z-10 w-[6px] cursor-col-resize"
       >
         <span
           className={cn(
-            'absolute inset-y-0 right-0 transition-[width,background-color] duration-100',
+            'absolute inset-y-0 end-0 transition-[width,background-color] duration-100',
             dragging || resizeHover
               ? 'w-[4px] bg-[var(--primary)]/70'
               : 'w-px bg-[var(--border)]'
