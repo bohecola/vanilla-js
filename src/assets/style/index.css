@@ -70,6 +70,9 @@
 html {
   color-scheme: light dark;
   --radius: 0.5rem;
+  /* 徽标渐变兜底（蓝色默认）。由 [data-accent] 那一组按配色覆盖 */
+  --logo-hi: #38bdf8;
+  --logo-lo: #0284c7;
 }
 
 [data-theme='dark'] {
@@ -187,6 +190,84 @@ html {
   --input: var(--border-strong);
   --ring: var(--accent-number);
   /* 注意：--border 已在上面定义过，shadcn 的 border-border 直接复用，不要重复声明 */
+}
+
+/*
+  配色（高亮主色）：蓝 / 粉 / 橙 / 绿，通过 <html data-accent> 切换。
+  <html data-accent> 由 src/theme/index.tsx 写入，首帧脚本（index.html）会先补一次。
+
+  只换「界面高亮主色」那几支 —— --accent-number / -bright 喂给 --primary、--ring，
+  再往下是列表选中行（--list-active / --list-active-ring）和徽标（--logo-hi / --logo-lo）。
+  语法高亮那几支语义色（--accent-string / bool / keyword / symbol / error）刻意不动：
+  无论主题是粉是绿，字符串还是绿、布尔还是紫，代码高亮才不显得错乱。
+
+  data-accent 单独写不够，明暗里同一配色取值不同（暗色取更亮那档保证对比度），
+  所以每一档都写成 [data-theme=…][data-accent=…] 的组合选择器；它比上面纯
+  [data-theme] 块特异度高（0,2,0 > 0,1,0），稳定压过蓝色默认值。
+*/
+[data-theme='dark'][data-accent='blue'] {
+  --accent-number: #38bdf8;         /* sky-400 */
+  --accent-number-bright: #7dd3fc;  /* sky-300 */
+  --list-active: rgba(56, 189, 248, 0.14);
+  --list-active-ring: rgba(56, 189, 248, 0.8);
+  --logo-hi: #38bdf8;               /* sky-400 */
+  --logo-lo: #0284c7;               /* sky-600 */
+}
+[data-theme='dark'][data-accent='pink'] {
+  --accent-number: #f472b6;         /* pink-400 */
+  --accent-number-bright: #f9a8d4;  /* pink-300 */
+  --list-active: rgba(244, 114, 182, 0.16);
+  --list-active-ring: rgba(244, 114, 182, 0.8);
+  --logo-hi: #f472b6;               /* pink-400 */
+  --logo-lo: #db2777;               /* pink-600 */
+}
+[data-theme='dark'][data-accent='orange'] {
+  --accent-number: #fb923c;         /* orange-400 */
+  --accent-number-bright: #fdba74;  /* orange-300 */
+  --list-active: rgba(251, 146, 60, 0.16);
+  --list-active-ring: rgba(251, 146, 60, 0.8);
+  --logo-hi: #fb923c;               /* orange-400 */
+  --logo-lo: #ea580c;               /* orange-600 */
+}
+[data-theme='dark'][data-accent='green'] {
+  --accent-number: #4ade80;         /* green-400 */
+  --accent-number-bright: #86efac;  /* green-300 */
+  --list-active: rgba(74, 222, 128, 0.16);
+  --list-active-ring: rgba(74, 222, 128, 0.8);
+  --logo-hi: #4ade80;               /* green-400 */
+  --logo-lo: #16a34a;               /* green-600 */
+}
+[data-theme='light'][data-accent='blue'] {
+  --accent-number: #0284c7;         /* sky-600 */
+  --accent-number-bright: #0369a1;  /* sky-700 */
+  --list-active: rgba(2, 132, 199, 0.12);
+  --list-active-ring: rgba(2, 132, 199, 0.85);
+  --logo-hi: #38bdf8;               /* sky-400 */
+  --logo-lo: #0284c7;               /* sky-600 */
+}
+[data-theme='light'][data-accent='pink'] {
+  --accent-number: #db2777;         /* pink-600 */
+  --accent-number-bright: #be185d;  /* pink-700 */
+  --list-active: rgba(219, 39, 119, 0.12);
+  --list-active-ring: rgba(219, 39, 119, 0.85);
+  --logo-hi: #f472b6;               /* pink-400 */
+  --logo-lo: #db2777;               /* pink-600 */
+}
+[data-theme='light'][data-accent='orange'] {
+  --accent-number: #ea580c;         /* orange-600 */
+  --accent-number-bright: #c2410c;  /* orange-700 */
+  --list-active: rgba(234, 88, 12, 0.12);
+  --list-active-ring: rgba(234, 88, 12, 0.85);
+  --logo-hi: #fb923c;               /* orange-400 */
+  --logo-lo: #ea580c;               /* orange-600 */
+}
+[data-theme='light'][data-accent='green'] {
+  --accent-number: #16a34a;         /* green-600 */
+  --accent-number-bright: #15803d;  /* green-700 */
+  --list-active: rgba(22, 163, 74, 0.12);
+  --list-active-ring: rgba(22, 163, 74, 0.85);
+  --logo-hi: #4ade80;               /* green-400 */
+  --logo-lo: #16a34a;               /* green-600 */
 }
 
 /* 全局页面级 reset：根容器填满视口、去掉 body 默认 margin 与白色背景 */

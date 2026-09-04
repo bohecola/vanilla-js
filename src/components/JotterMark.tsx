@@ -25,8 +25,10 @@ export function JotterMark({ className }: { className?: string }) {
       className={className}
     >
       <linearGradient id="jotter-mark" x1="8" y1="3" x2="24" y2="29" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#38bdf8" />
-        <stop offset="1" stopColor="#0284c7" />
+        {/* 渐变两端跟随配色（data-accent）：一支亮、一支深的同色系，见 index.css 的
+            --logo-hi / --logo-lo。与 favicon.svg 那支静态蓝色不再强绑定。 */}
+        <stop stopColor="var(--logo-hi)" />
+        <stop offset="1" stopColor="var(--logo-lo)" />
       </linearGradient>
       <path
         fill="url(#jotter-mark)"
