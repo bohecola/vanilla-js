@@ -78,33 +78,38 @@ html {
 [data-theme='dark'] {
   color-scheme: dark;
 
-  /* 页面 / 面板背景 */
-  --app-bg: #020617;   /* slate-950 */
-  --panel-bg: #0f172a; /* slate-900 */
-  --panel-hover: #1e293b; /* slate-800 */
-  /* 列表选中态底色（侧边栏当前选中行）：比 hover 明显一档、半透明泛蓝，同 VS Code
+  /* 页面 / 面板背景：中性深灰，取值对齐 VS Code Dark Modern。
+     之前是带蓝调的 slate（#0f172a / #020617），和 Monaco vs-dark 的 #1e1e1e 拼在一起
+     一块蓝黑一块灰黑；改成中性灰后编辑器与四周自然接上，蓝粉橙绿四档高亮色也不再有色偏。
+     --panel-bg 刻意等于 vs-dark 的编辑器底色 */
+  --app-bg: #181818;
+  --panel-bg: #1e1e1e;
+  --panel-hover: #2a2d2e;
+  /* 列表选中态底色（侧边栏当前选中行）：比 hover 明显一档、带一点主色，同 VS Code
      那层「选中即铺整行背景」的处理，不加描边不加粗 */
   --list-active: rgba(56, 189, 248, 0.14);
   /* 选中行的细焦点描边色（VS Code 在选中行上描一圈很细的框） */
   --list-active-ring: rgba(56, 189, 248, 0.8);
 
-  /* 编辑器顶部标签（深色主题）：激活 tab 用最深页面背景色(--app-bg)，非激活 tab 用
-     较亮的正文色(--panel-bg)，与上一版对调 */
-  --tab-active-bg: var(--app-bg);
-  --tab-inactive-bg: var(--panel-bg);
+  /* 编辑器顶部标签（深色主题）：激活 tab 与编辑器同色（--panel-bg），非激活 tab 和
+     标签栏底色一样更深一档（--app-bg），同 VS Code */
+  --tab-active-bg: var(--panel-bg);
+  --tab-inactive-bg: var(--app-bg);
+  /* 标签栏本身（含右侧空白与运行按钮区）与非激活 tab 同色，激活 tab 才「浮」到编辑器色上 */
+  --tab-bar-bg: var(--app-bg);
 
   /* 边框 / 分割线 */
-  --border: #1e293b;   /* slate-800 */
-  --border-strong: #334155; /* slate-700 */
+  --border: #2b2b2b;
+  --border-strong: #3c3c3c;
 
   /* 文字 */
-  --text-primary: #e2e8f0; /* slate-200 */
-  --text-body: #cbd5e1;    /* slate-300 */
-  --text-muted: #94a3b8;   /* slate-400 */
-  --text-faint: #64748b;   /* slate-500 */
+  --text-primary: #e5e5e5;
+  --text-body: #cccccc;
+  --text-muted: #9d9d9d;
+  --text-faint: #6e6e6e;
 
   /* 徽标底色 */
-  --badge-bg: #334155;  /* slate-700 */
+  --badge-bg: #3c3c3c;
 
   /* 值类型强调色（暗色下偏亮） */
   --accent-number: #38bdf8;   /* sky-400 */
@@ -114,6 +119,18 @@ html {
   --accent-keyword: #c084fc;  /* violet-300 */
   --accent-symbol: #fcd34d;   /* amber-300 */
   --accent-error: #f87171;    /* red-400 */
+
+  /* 控制台对象树的值类型色（Inspector.tsx）。故意不接 data-accent：切换界面主色时
+     数字 / 字符串的颜色应保持稳定，读输出才不别扭。三个主色相邻明度、低饱和，
+     key 与括号用中性灰，靠层次而不是靠花色区分 */
+  --val-key: #9d9d9d;
+  --val-string: #6ee7b7;  /* emerald-300 */
+  --val-number: #7dd3fc;  /* sky-300 */
+  --val-bool: #c4b5fd;    /* violet-300 */
+  --val-fn: #c4b5fd;      /* violet-300 */
+  --val-nil: #6e6e6e;
+  --val-regexp: #fda4af;  /* rose-300 */
+  --val-symbol: #fcd34d;  /* amber-300 */
 
   /* ---- shadcn 令牌：全部指向上面的语义变量，不引入第二套配色 ---- */
   --background: var(--panel-bg);
@@ -150,6 +167,7 @@ html {
      让它“凸出”可一眼认出；未选中 tab 用接近白的很浅灰(--slate-50)，淡下去 */
   --tab-active-bg: var(--panel-hover);
   --tab-inactive-bg: #f8fafc;
+  --tab-bar-bg: #f8fafc;
 
   --border: #cbd5e1;     /* slate-300 */
   --border-strong: #94a3b8; /* slate-400 */
@@ -169,6 +187,16 @@ html {
   --accent-keyword: #6d28d9;  /* violet-700 */
   --accent-symbol: #d97706;   /* amber-600 */
   --accent-error: #dc2626;    /* red-600 */
+
+  /* 控制台对象树的值类型色（浅色），与上面暗色一组对应 */
+  --val-key: #475569;     /* slate-600 */
+  --val-string: #047857;  /* emerald-700 */
+  --val-number: #0369a1;  /* sky-700 */
+  --val-bool: #6d28d9;    /* violet-700 */
+  --val-fn: #6d28d9;      /* violet-700 */
+  --val-nil: #94a3b8;     /* slate-400 */
+  --val-regexp: #be123c;  /* rose-700 */
+  --val-symbol: #b45309;  /* amber-700 */
 
   /* ---- shadcn 令牌：全部指向上面的语义变量，不引入第二套配色 ---- */
   --background: var(--panel-bg);
@@ -394,6 +422,15 @@ html {
   UI 外壳（侧栏/顶栏/对话框）仍走 dir=rtl 正常镜像。
   （Monaco 一般自带 LTR 方向，这条是防御性兜底。）
 */
+/*
+  编辑器顶部的滚动阴影：Monaco 在 scrollTop > 0 时会在编辑区顶边画一条 6px 的内阴影
+  （scrollbar.shadow）。我们的标签栏本身有底边线，再叠一层阴影就像隔着半透明的东西
+  看到被截断的那一行，索性关掉，截断处干脆利落。横向滚动条仍是浮在内容上的（同 VS Code）。
+*/
+.monaco-editor .scroll-decoration {
+  box-shadow: none !important;
+}
+
 [dir='rtl'] .monaco-editor,
 [dir='rtl'] .monaco-editor .view-lines,
 [dir='rtl'] .monaco-editor .inputarea {

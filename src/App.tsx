@@ -677,7 +677,7 @@ function App() {
                 动作不再单独叠一行，直接并进标签这行 —— 顶部只有一条，两块才显得是一整块 */}
             {/* 头部单行，底边与 Console 头部同一根发丝线，两栏才像一整块。
                 激活 tab 用正文色底（--tab-active-bg），紧贴这条线向上与其连成一片 */}
-            <div className="flex h-9 shrink-0 items-stretch border-b border-[var(--border)]">
+            <div className="flex h-9 shrink-0 items-stretch border-b border-[var(--border)] bg-[var(--tab-bar-bg)]">
               {/* 标签区（无左右箭头，滚动靠滚轮 / 悬浮进度条，同 VS Code）。
                   外层用命名 group/tabs 控进度条浮现，避免它作为裸 .group 把每个 tab
                   的 group-hover 一并点亮（那样整排关闭按钮会一起出现） */}
