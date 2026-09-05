@@ -7,7 +7,7 @@
   鍵名按出處分組，順序與 dict.zh.ts 完全一致。
 */
 
-import type { Dict, CompileIssue } from './dict.zh'
+import type { Dict, CompileIssue } from './dict.zh.ts'
 
 export const zhHant: Dict = {
   // ---- 文件層級 ----

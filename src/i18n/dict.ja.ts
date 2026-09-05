@@ -2,7 +2,7 @@
   日本語辞書 — キーは dict.zh.ts / dict.en.ts と正確に一致。
   `: Dict` 注釈により、キーの欠落や引数の不一致は tsc が検出します。
 */
-import type { Dict, CompileIssue } from './dict.zh'
+import type { Dict, CompileIssue } from './dict.zh.ts'
 
 export const ja: Dict = {
   'html.lang': 'ja',

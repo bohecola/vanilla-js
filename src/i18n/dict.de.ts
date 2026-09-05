@@ -3,7 +3,7 @@
   Annotiert mit `: Dict`; jede fehlende/überzählige Taste oder abweichende
   Parametrisierung ist ein tsc-Fehler.
 */
-import type { Dict, CompileIssue } from './dict.zh'
+import type { Dict, CompileIssue } from './dict.zh.ts'
 
 export const de: Dict = {
   'html.lang': 'de',

@@ -3,7 +3,7 @@
   L'annotazione `: Dict` fa sì che una chiave mancante/in più o una firma di
   parametro sbagliata siano errori di compilazione (tsc), mai un buco a runtime.
 */
-import type { Dict, CompileIssue } from './dict.zh'
+import type { Dict, CompileIssue } from './dict.zh.ts'
 
 export const it: Dict = {
   'html.lang': 'it',

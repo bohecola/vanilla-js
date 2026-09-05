@@ -2,7 +2,7 @@
   Từ điển tiếng Việt — khóa khớp chính xác với dict.zh.ts / dict.en.ts.
   Khai báo `: Dict` để tsc bắt lỗi thiếu/thừa khóa hoặc sai kiểu tham số.
 */
-import type { Dict, CompileIssue } from './dict.zh'
+import type { Dict, CompileIssue } from './dict.zh.ts'
 
 export const vi: Dict = {
   'html.lang': 'vi',

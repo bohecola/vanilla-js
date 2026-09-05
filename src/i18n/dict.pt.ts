@@ -3,7 +3,7 @@
   Anotado `: Dict`: chave faltando, a mais ou assinatura de parâmetro errada
   é erro de compilação (tsc).
 */
-import type { Dict, CompileIssue } from './dict.zh'
+import type { Dict, CompileIssue } from './dict.zh.ts'
 
 export const pt: Dict = {
   'html.lang': 'pt',

@@ -8,7 +8,7 @@
   两个语言项的名字刻意不翻译：dict.zh 里的「中文」和这里的 English 都写死在切换器里，
   见 App.tsx —— 用户看不懂当前语言时，正需要用目标语言认出自己那一项。
 */
-import type { Dict } from './dict.zh'
+import type { Dict } from './dict.zh.ts'
 
 export const en: Dict = {
   // ---- 文档级 ----

@@ -3,7 +3,7 @@
   Annoté `: Dict` : une clé manquante, une clé en trop ou une signature de paramètre
   différente est une erreur de compilation (tsc), rien ne passe silencieusement.
 */
-import type { Dict, CompileIssue } from './dict.zh'
+import type { Dict, CompileIssue } from './dict.zh.ts'
 
 export const fr: Dict = {
   // ---- Document ----

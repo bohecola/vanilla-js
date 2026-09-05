@@ -3,7 +3,7 @@
   الترميز `: Dict` يجعل أي مفتاح ناقص أو زائد أو خطأ في نوع المعامل خطأَ تثبيت (tsc).
   اتجاه النص من اليمين لليسار يديره كود آخر (سمة dir)، هنا الترجمة فقط.
 */
-import type { Dict, CompileIssue } from './dict.zh'
+import type { Dict, CompileIssue } from './dict.zh.ts'
 
 export const ar: Dict = {
   'html.lang': 'ar',

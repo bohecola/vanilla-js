@@ -2,7 +2,7 @@
   한국어 사전 — 키는 dict.zh.ts / dict.en.ts와 정확히 동일합니다.
   `: Dict` 주석 덕분에 키가 빠지거나 잘못된 파라미터면 tsc가 잡아냅니다.
 */
-import type { Dict, CompileIssue } from './dict.zh'
+import type { Dict, CompileIssue } from './dict.zh.ts'
 
 export const ko: Dict = {
   'html.lang': 'ko',
