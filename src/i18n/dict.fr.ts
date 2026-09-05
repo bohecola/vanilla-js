@@ -88,6 +88,9 @@ export const fr: Dict = {
   'confirm.closeTab.unsaved':
     'Ce fichier a des modifications non enregistrées qui seront perdues si vous le fermez.',
   'confirm.closeTab.ok': 'Fermer',
+  'confirm.newScratch.title': 'Effacer le brouillon ?',
+  'confirm.newScratch.body': 'Le brouillon contient du texte non enregistré qui sera perdu.',
+  'confirm.newScratch.ok': 'Effacer et créer',
   'panes.resize': 'Glisser pour redimensionner les volets éditeur et sortie',
 
   // ---- Barre d’état ----
@@ -201,6 +204,8 @@ export const fr: Dict = {
 
   // ---- Console ----
   'console.empty': '// la sortie console s’affiche ici',
+  'console.clear': 'Effacer',
+  'console.omitted': (n: number) => `${n} premières lignes omises`,
 
   // ---- Noms par défaut ----
   'file.untitled': (p: { ext: string }) => `Sans titre.${p.ext}`,
@@ -226,6 +231,7 @@ export const fr: Dict = {
 
   // ---- Système de fichiers ----
   'err.fs.noPicker': 'Ce navigateur ne peut pas ouvrir des dossiers locaux',
+  'err.fs.notAllowed': 'Accès refusé à ce fichier ou dossier (verrouillé par un autre programme, en lecture seule, ou autorisation révoquée)',
   'err.fs.tooLarge': (p: { name: string; size: string; max: string }) =>
     `${p.name} fait ${p.size}, au-delà de la limite de ${p.max} ; il n’a pas été ouvert`,
   'err.fs.binary': (p: { name: string }) =>
@@ -251,8 +257,6 @@ export const fr: Dict = {
   'err.idb.fail': 'La transaction IndexedDB a échoué',
 
   // ---- Compilation / exécution ----
-  'err.compile.initFailed': (p: { message: string }) =>
-    `Impossible de démarrer le compilateur TypeScript (échec du chargement du wasm esbuild) : ${p.message}`,
   'err.compile.failed': (p: { issues: CompileIssue[] }) =>
     `Échec de la compilation TypeScript : ${p.issues
       .map(

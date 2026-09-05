@@ -80,6 +80,9 @@ export const ko: Dict = {
   'confirm.closeTab.title': (p: { name: string }) => `${p.name}을(를) 닫을까요?`,
   'confirm.closeTab.unsaved': '이 파일에는 저장하지 않은 변경이 있어 닫으면 잃게 됩니다.',
   'confirm.closeTab.ok': '닫기',
+  'confirm.newScratch.title': '초안을 비울까요?',
+  'confirm.newScratch.body': '초안에 저장하지 않은 내용이 있어 새로 만들면 사라집니다.',
+  'confirm.newScratch.ok': '비우고 새로 만들기',
   'panes.resize': '드래그해 편집기와 출력 너비 조절',
 
   'statusbar.noFile': '열린 파일 없음',
@@ -187,6 +190,10 @@ export const ko: Dict = {
 
   'console.empty': '// console 출력이 여기에 표시됩니다',
 
+  'console.clear': '지우기',
+
+  'console.omitted': (n: number) => `가장 오래된 ${n}줄 생략됨`,
+
   'file.untitled': (p: { ext: string }) => `제목 없음.${p.ext}`,
   'file.newDir': '새 폴더',
   'file.scratch': '초안',
@@ -207,6 +214,8 @@ export const ko: Dict = {
     '이 확장자로는 여기서 열 수 없습니다. .js / .ts / .json / .md 등을 쓰세요',
 
   'err.fs.noPicker': '이 브라우저는 로컬 폴더를 열 수 없습니다',
+
+  'err.fs.notAllowed': '이 파일 또는 폴더에 접근할 권한이 없습니다 (다른 프로그램이 사용 중이거나 읽기 전용이거나 권한이 취소됨)',
   'err.fs.tooLarge': (p: { name: string; size: string; max: string }) =>
     `${p.name}은(는) ${p.size}로 ${p.max} 한도를 넘어 열지 않았습니다`,
   'err.fs.binary': (p: { name: string }) =>
@@ -229,9 +238,6 @@ export const ko: Dict = {
   'err.idb.blocked': 'IndexedDB가 다른 탭에 막혀 있습니다',
   'err.idb.abort': 'IndexedDB 트랜잭션이 중단되었습니다',
   'err.idb.fail': 'IndexedDB 트랜잭션이 실패했습니다',
-
-  'err.compile.initFailed': (p: { message: string }) =>
-    `TypeScript 컴파일러를 시작하지 못했습니다(esbuild wasm 로드 실패): ${p.message}`,
   'err.compile.failed': (p: { issues: CompileIssue[] }) =>
     `TypeScript 컴파일 실패: ${p.issues
       .map((i) => `${i.text || '알 수 없는 오류'}${i.loc ? `(${i.loc.line}행 ${i.loc.column}열)` : ''}`)

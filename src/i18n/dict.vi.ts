@@ -79,6 +79,9 @@ export const vi: Dict = {
   'confirm.closeTab.title': (p: { name: string }) => `Đóng ${p.name}?`,
   'confirm.closeTab.unsaved': 'Tệp này có thay đổi chưa lưu sẽ mất nếu bạn đóng nó.',
   'confirm.closeTab.ok': 'Đóng',
+  'confirm.newScratch.title': 'Xóa bản nháp?',
+  'confirm.newScratch.body': 'Bản nháp có nội dung chưa lưu và sẽ bị thay thế.',
+  'confirm.newScratch.ok': 'Xóa và tạo mới',
   'panes.resize': 'Kéo để chỉnh độ rộng trình soạn thảo và kết quả',
 
   'statusbar.noFile': 'Chưa mở tệp nào',
@@ -184,6 +187,10 @@ export const vi: Dict = {
 
   'console.empty': '// kết quả console sẽ hiển thị ở đây',
 
+  'console.clear': 'Xóa',
+
+  'console.omitted': (n: number) => `Đã bỏ qua ${n} dòng cũ nhất`,
+
   'file.untitled': (p: { ext: string }) => `Chưa đặt tên.${p.ext}`,
   'file.newDir': 'Thư mục mới',
   'file.scratch': 'Nháp',
@@ -202,6 +209,8 @@ export const vi: Dict = {
   'validate.renameExt': 'Đổi sang đuôi này sẽ không mở được — dùng .js / .ts / .json / .md…',
 
   'err.fs.noPicker': 'Trình duyệt này không mở được thư mục cục bộ',
+
+  'err.fs.notAllowed': 'Không có quyền truy cập tệp hoặc thư mục này (có thể đang bị chương trình khác khóa, chỉ đọc, hoặc quyền đã bị thu hồi)',
   'err.fs.tooLarge': (p: { name: string; size: string; max: string }) =>
     `${p.name} nặng ${p.size}, vượt giới hạn ${p.max} nên không mở`,
   'err.fs.binary': (p: { name: string }) =>
@@ -224,9 +233,6 @@ export const vi: Dict = {
   'err.idb.blocked': 'IndexedDB bị tab khác chặn',
   'err.idb.abort': 'Giao dịch IndexedDB bị hủy',
   'err.idb.fail': 'Giao dịch IndexedDB thất bại',
-
-  'err.compile.initFailed': (p: { message: string }) =>
-    `Không khởi động được trình biên dịch TypeScript (tải esbuild wasm thất bại): ${p.message}`,
   'err.compile.failed': (p: { issues: CompileIssue[] }) =>
     `Biên dịch TypeScript thất bại: ${p.issues
       .map((i) => `${i.text || 'Lỗi không rõ'}${i.loc ? ` (dòng ${i.loc.line}, cột ${i.loc.column})` : ''}`)

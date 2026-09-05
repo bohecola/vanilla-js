@@ -86,6 +86,9 @@ export const zhHant: Dict = {
   'confirm.closeTab.title': (p: { name: string }) => `關閉 ${p.name}？`,
   'confirm.closeTab.unsaved': '該檔案有未儲存的修改，關閉將遺失這些修改。',
   'confirm.closeTab.ok': '關閉',
+  'confirm.newScratch.title': '清空草稿？',
+  'confirm.newScratch.body': '草稿裡有未儲存的內容，新建會把它清掉。',
+  'confirm.newScratch.ok': '清空並新建',
   'panes.resize': '拖曳調整編輯器與輸出的寬度',
 
   // ---- 底部狀態列 ----
@@ -197,6 +200,8 @@ export const zhHant: Dict = {
 
   // ---- Console ----
   'console.empty': '// console 輸出會顯示在這裡',
+  'console.clear': '清空',
+  'console.omitted': (n: number) => `已省略最早的 ${n} 條`,
 
   /* ---- 預設名稱 ----
      這三條會真的落到磁碟上（新增時的預填名）。 */
@@ -220,6 +225,7 @@ export const zhHant: Dict = {
 
   // ---- 檔案系統 ----
   'err.fs.noPicker': '目前瀏覽器不支援開啟本機目錄',
+  'err.fs.notAllowed': '沒有權限存取該檔案或目錄（可能被其他程式佔用、唯讀，或授權已被撤銷）',
   'err.fs.tooLarge': (p: { name: string; size: string; max: string }) =>
     `${p.name} 有 ${p.size}，超過 ${p.max} 上限，沒有開啟`,
   'err.fs.binary': (p: { name: string }) => `${p.name} 看起來是二進位檔，未開啟`,
@@ -244,8 +250,6 @@ export const zhHant: Dict = {
   'err.idb.fail': 'IndexedDB 交易失敗',
 
   // ---- 編譯 / 執行 ----
-  'err.compile.initFailed': (p: { message: string }) =>
-    `TypeScript 編譯器初始化失敗（esbuild wasm 載入失敗）：${p.message}`,
   'err.compile.failed': (p: { issues: CompileIssue[] }) =>
     `TypeScript 編譯失敗：${p.issues
       .map(

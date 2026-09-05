@@ -80,6 +80,9 @@ export const ar: Dict = {
   'confirm.closeTab.title': (p: { name: string }) => `إغلاق ${p.name}؟`,
   'confirm.closeTab.unsaved': 'لهذا الملف تغييرات غير محفوظة ستضيع إذا أغلقته.',
   'confirm.closeTab.ok': 'إغلاق',
+  'confirm.newScratch.title': 'تجاهل المسودة؟',
+  'confirm.newScratch.body': 'تحتوي المسودة على محتوى غير محفوظ سيتم استبداله.',
+  'confirm.newScratch.ok': 'تجاهل وإنشاء',
   'panes.resize': 'اسحب لتغيير عرض المحرِّر والمخرجات',
 
   'statusbar.noFile': 'لا يوجد ملف مفتوح',
@@ -184,6 +187,10 @@ export const ar: Dict = {
 
   'console.empty': '// سيعرض إخراج console هنا',
 
+  'console.clear': 'مسح',
+
+  'console.omitted': (n: number) => `تم حذف أقدم ${n} سطرًا`,
+
   'file.untitled': (p: { ext: string }) => `بدون عنوان.${p.ext}`,
   'file.newDir': 'مجلد جديد',
   'file.scratch': 'مسوّدة',
@@ -203,6 +210,8 @@ export const ar: Dict = {
     'بهذه اللاحقة لن يفتح الملف — استخدم .js / .ts / .json / .md وما شابه',
 
   'err.fs.noPicker': 'لا يستطيع هذا المتصفح فتح مجلدات محلية',
+
+  'err.fs.notAllowed': 'لا يوجد إذن للوصول إلى هذا الملف أو المجلد (قد يكون مقفلاً من برنامج آخر، أو للقراءة فقط، أو تم إلغاء الإذن)',
   'err.fs.tooLarge': (p: { name: string; size: string; max: string }) =>
     `${p.name} حجمه ${p.size}، ما يتجاوز حد ${p.max}؛ لم يُفتح`,
   'err.fs.binary': (p: { name: string }) =>
@@ -225,9 +234,6 @@ export const ar: Dict = {
   'err.idb.blocked': 'IndexedDB محجوب بواسطة تبويب آخر',
   'err.idb.abort': 'أُلغيت معاملة IndexedDB',
   'err.idb.fail': 'فشلت معاملة IndexedDB',
-
-  'err.compile.initFailed': (p: { message: string }) =>
-    `تعذّر تشغيل مترجم TypeScript (فشل تحميل wasm الخاص بـ esbuild): ${p.message}`,
   'err.compile.failed': (p: { issues: CompileIssue[] }) =>
     `فشل ترجمة TypeScript: ${p.issues
       .map((i) => `${i.text || 'خطأ غير معروف'}${i.loc ? ` (سطر ${i.loc.line}، عمود ${i.loc.column})` : ''}`)

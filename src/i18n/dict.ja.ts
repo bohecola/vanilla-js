@@ -80,6 +80,9 @@ export const ja: Dict = {
   'confirm.closeTab.title': (p: { name: string }) => `${p.name} を閉じますか？`,
   'confirm.closeTab.unsaved': 'このファイルには未保存の変更があり、閉じると失われます。',
   'confirm.closeTab.ok': '閉じる',
+  'confirm.newScratch.title': '下書きを破棄しますか？',
+  'confirm.newScratch.body': '下書きに未保存の内容があります。新規作成すると失われます。',
+  'confirm.newScratch.ok': '破棄して新規作成',
   'panes.resize': 'ドラッグしてエディターと出力の幅を調整',
 
   'statusbar.noFile': 'ファイルが開かれていません',
@@ -187,6 +190,10 @@ export const ja: Dict = {
 
   'console.empty': '// console の出力がここに表示されます',
 
+  'console.clear': 'クリア',
+
+  'console.omitted': (n: number) => `古い ${n} 行を省略しました`,
+
   'file.untitled': (p: { ext: string }) => `無題.${p.ext}`,
   'file.newDir': '新しいフォルダー',
   'file.scratch': 'スクラッチ',
@@ -206,6 +213,8 @@ export const ja: Dict = {
     'この拡張子だとここで開けません。.js / .ts / .json / .md などをお使いください',
 
   'err.fs.noPicker': 'このブラウザはローカルフォルダーを開けません',
+
+  'err.fs.notAllowed': 'このファイルまたはフォルダーにアクセスする権限がありません（他のプログラムが使用中、読み取り専用、または許可が取り消された可能性）',
   'err.fs.tooLarge': (p: { name: string; size: string; max: string }) =>
     `${p.name} は ${p.size} あり、${p.max} の上限を超えているため開きませんでした`,
   'err.fs.binary': (p: { name: string }) => `${p.name} はバイナリファイルのようで開きませんでした`,
@@ -227,9 +236,6 @@ export const ja: Dict = {
   'err.idb.blocked': 'IndexedDB が別のタブにブロックされています',
   'err.idb.abort': 'IndexedDB のトランザクションが中断されました',
   'err.idb.fail': 'IndexedDB のトランザクションが失敗しました',
-
-  'err.compile.initFailed': (p: { message: string }) =>
-    `TypeScript コンパイラを起動できませんでした（esbuild wasm の読み込み失敗）: ${p.message}`,
   'err.compile.failed': (p: { issues: CompileIssue[] }) =>
     `TypeScript のコンパイルに失敗しました: ${p.issues
       .map((i) => `${i.text || '不明なエラー'}${i.loc ? `（${i.loc.line} 行 ${i.loc.column} 列）` : ''}`)

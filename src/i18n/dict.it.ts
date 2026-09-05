@@ -83,6 +83,9 @@ export const it: Dict = {
   'confirm.closeTab.unsaved':
     'Questo file ha modifiche non salvate che andranno perse chiudendolo.',
   'confirm.closeTab.ok': 'Chiudi',
+  'confirm.newScratch.title': 'Scartare la bozza?',
+  'confirm.newScratch.body': 'La bozza contiene testo non salvato che verrà sostituito.',
+  'confirm.newScratch.ok': 'Scarta e crea',
   'panes.resize': 'Trascina per ridimensionare editor e output',
 
   'statusbar.noFile': 'Nessun file aperto',
@@ -164,7 +167,7 @@ export const it: Dict = {
   'sidebar.truncated': (p: { max: number }) =>
     `Troppe voci, mostro solo le prime ${p.max}`,
   'sidebar.rootLocked': (p: { name: string }) =>
-    `Clicca qui per concedere di nuovo l\'accesso a ${p.name}`,
+    `Clicca qui per concedere di nuovo l'accesso a ${p.name}`,
   'sidebar.rootHint': (p: { name: string }) =>
     `${p.name} (clicca per aprire / chiudere e renderla la destinazione delle nuove voci; tasto destro per altre opzioni)`,
   'sidebar.rootMenu': (p: { name: string }) => `Azioni per ${p.name}`,
@@ -193,6 +196,10 @@ export const it: Dict = {
 
   'console.empty': '// qui compare l\'output della console',
 
+  'console.clear': 'Svuota',
+
+  'console.omitted': (n: number) => `${n} righe più vecchie omesse`,
+
   'file.untitled': (p: { ext: string }) => `Senza titolo.${p.ext}`,
   'file.newDir': 'Nuova cartella',
   'file.scratch': 'Appunto',
@@ -214,6 +221,8 @@ export const it: Dict = {
     'Questa estensione impedirebbe di aprire il file — usa .js / .ts / .json / .md e simili',
 
   'err.fs.noPicker': 'Questo browser non apre cartelle locali',
+
+  'err.fs.notAllowed': 'Nessun permesso per accedere a questo file o cartella (bloccato da un altro programma, in sola lettura o autorizzazione revocata)',
   'err.fs.tooLarge': (p: { name: string; size: string; max: string }) =>
     `${p.name} pesa ${p.size}, oltre il limite di ${p.max}; non è stato aperto`,
   'err.fs.binary': (p: { name: string }) =>
@@ -236,9 +245,6 @@ export const it: Dict = {
   'err.idb.blocked': 'IndexedDB è bloccato da un\'altra scheda',
   'err.idb.abort': 'La transazione IndexedDB è stata interrotta',
   'err.idb.fail': 'La transazione IndexedDB è fallita',
-
-  'err.compile.initFailed': (p: { message: string }) =>
-    `Impossibile avviare il compilatore TypeScript (caricamento del wasm di esbuild fallito): ${p.message}`,
   'err.compile.failed': (p: { issues: CompileIssue[] }) =>
     `Compilazione TypeScript fallita: ${p.issues
       .map(

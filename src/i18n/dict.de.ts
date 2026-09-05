@@ -83,6 +83,9 @@ export const de: Dict = {
   'confirm.closeTab.unsaved':
     'Diese Datei hat ungespeicherte Änderungen, die beim Schließen verloren gehen.',
   'confirm.closeTab.ok': 'Schließen',
+  'confirm.newScratch.title': 'Entwurf verwerfen?',
+  'confirm.newScratch.body': 'Der Entwurf enthält ungespeicherten Inhalt, der ersetzt wird.',
+  'confirm.newScratch.ok': 'Verwerfen und neu anlegen',
   'panes.resize': 'Ziehen, um Editor und Ausgabe zu skalieren',
 
   'statusbar.noFile': 'Keine Datei geöffnet',
@@ -192,6 +195,10 @@ export const de: Dict = {
 
   'console.empty': '// Konsolenausgabe erscheint hier',
 
+  'console.clear': 'Leeren',
+
+  'console.omitted': (n: number) => `${n} älteste Zeilen ausgelassen`,
+
   'file.untitled': (p: { ext: string }) => `Ohne Titel.${p.ext}`,
   'file.newDir': 'Neuer Ordner',
   'file.scratch': 'Entwurf',
@@ -213,6 +220,8 @@ export const de: Dict = {
     'Diese Endung macht die Datei hier unöffnbar — verwenden Sie .js / .ts / .json / .md u. a.',
 
   'err.fs.noPicker': 'Dieser Browser kann keine lokalen Ordner öffnen',
+
+  'err.fs.notAllowed': 'Kein Zugriff auf diese Datei oder diesen Ordner (von einem anderen Programm gesperrt, schreibgeschützt oder Berechtigung entzogen)',
   'err.fs.tooLarge': (p: { name: string; size: string; max: string }) =>
     `${p.name} ist ${p.size}, über dem Limit von ${p.max}; nicht geöffnet`,
   'err.fs.binary': (p: { name: string }) =>
@@ -235,9 +244,6 @@ export const de: Dict = {
   'err.idb.blocked': 'IndexedDB wird von einem anderen Tab blockiert',
   'err.idb.abort': 'Die IndexedDB-Transaktion wurde abgebrochen',
   'err.idb.fail': 'Die IndexedDB-Transaktion ist fehlgeschlagen',
-
-  'err.compile.initFailed': (p: { message: string }) =>
-    `TypeScript-Compiler konnte nicht starten (Laden des esbuild-wasm fehlgeschlagen): ${p.message}`,
   'err.compile.failed': (p: { issues: CompileIssue[] }) =>
     `TypeScript-Kompilierung fehlgeschlagen: ${p.issues
       .map(

@@ -47,16 +47,32 @@ function getInitialAccent(): Accent {
   return 'blue' // 默认延续蓝色
 }
 
+const LIGHT_QUERY = '(prefers-color-scheme: light)'
+
 function systemPref(): EffectiveTheme {
   if (typeof window === 'undefined' || !window.matchMedia) return 'dark'
-  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  return window.matchMedia(LIGHT_QUERY).matches ? 'light' : 'dark'
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<ThemeMode>(getInitialMode)
   const [accent, setAccent] = useState<Accent>(getInitialAccent)
+  // 系统配色放进 state：之前是 render 里直接读 matchMedia，系统切换时只改了 DOM 属性，
+  // effective 不更新，Monaco（靠 effective 决定主题）就停在旧主题上。
+  const [system, setSystem] = useState<EffectiveTheme>(systemPref)
 
-  const effective: EffectiveTheme = mode === 'system' ? systemPref() : mode
+  const effective: EffectiveTheme = mode === 'system' ? system : mode
+
+  // 跟随系统：监听 prefers-color-scheme 变化。挂上就读一次当前值，
+  // 免得从 light/dark 切回 system 的那一刻用的是过期的值。
+  useEffect(() => {
+    if (mode !== 'system' || !window.matchMedia) return
+    const mql = window.matchMedia(LIGHT_QUERY)
+    const sync = () => setSystem(mql.matches ? 'light' : 'dark')
+    sync()
+    mql.addEventListener('change', sync)
+    return () => mql.removeEventListener('change', sync)
+  }, [mode])
 
   // 应用到 <html> 的 data-theme 属性，驱动 CSS 变量、color-scheme 与 Monaco 主题。
   // color-scheme 交给 index.css 里的 [data-theme] 规则，不在这里写内联样式，
@@ -69,17 +85,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.setAttribute('data-accent', accent)
   }, [accent])
-
-  // 跟随系统：监听 prefers-color-scheme 变化，仅 system 模式需要
-  useEffect(() => {
-    if (mode !== 'system') return
-    const mql = window.matchMedia('(prefers-color-scheme: light)')
-    const onChange = () => {
-      document.documentElement.setAttribute('data-theme', systemPref())
-    }
-    mql.addEventListener('change', onChange)
-    return () => mql.removeEventListener('change', onChange)
-  }, [mode])
 
   // 持久化用户选择
   useEffect(() => {

@@ -82,6 +82,9 @@ export const pt: Dict = {
   'confirm.closeTab.unsaved':
     'Este arquivo tem alterações não salvas que serão perdidas ao fechar.',
   'confirm.closeTab.ok': 'Fechar',
+  'confirm.newScratch.title': 'Descartar o rascunho?',
+  'confirm.newScratch.body': 'O rascunho tem conteúdo não salvo que será substituído.',
+  'confirm.newScratch.ok': 'Descartar e criar',
   'panes.resize': 'Arraste para redimensionar editor e saída',
 
   'statusbar.noFile': 'Nenhum arquivo aberto',
@@ -188,6 +191,10 @@ export const pt: Dict = {
 
   'console.empty': '// a saída do console aparece aqui',
 
+  'console.clear': 'Limpar',
+
+  'console.omitted': (n: number) => `${n} linhas mais antigas omitidas`,
+
   'file.untitled': (p: { ext: string }) => `Sem título.${p.ext}`,
   'file.newDir': 'Nova pasta',
   'file.scratch': 'Rascunho',
@@ -209,6 +216,8 @@ export const pt: Dict = {
     'Essa extensão impediria abrir o arquivo — use .js / .ts / .json / .md e afins',
 
   'err.fs.noPicker': 'Este navegador não abre pastas locais',
+
+  'err.fs.notAllowed': 'Sem permissão para acessar este arquivo ou pasta (pode estar bloqueado por outro programa, ser somente leitura ou a permissão foi revogada)',
   'err.fs.tooLarge': (p: { name: string; size: string; max: string }) =>
     `${p.name} tem ${p.size}, acima do limite de ${p.max}; não foi aberto`,
   'err.fs.binary': (p: { name: string }) =>
@@ -231,9 +240,6 @@ export const pt: Dict = {
   'err.idb.blocked': 'IndexedDB bloqueado por outra aba',
   'err.idb.abort': 'A transação do IndexedDB foi abortada',
   'err.idb.fail': 'A transação do IndexedDB falhou',
-
-  'err.compile.initFailed': (p: { message: string }) =>
-    `Não foi possível iniciar o compilador TypeScript (falha ao carregar o wasm do esbuild): ${p.message}`,
   'err.compile.failed': (p: { issues: CompileIssue[] }) =>
     `Falha ao compilar TypeScript: ${p.issues
       .map((i) => `${i.text || 'Erro desconhecido'}${i.loc ? ` (linha ${i.loc.line}, coluna ${i.loc.column})` : ''}`)

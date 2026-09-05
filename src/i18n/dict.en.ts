@@ -86,6 +86,9 @@ export const en: Dict = {
   'confirm.closeTab.title': (p: { name: string }) => `Close ${p.name}?`,
   'confirm.closeTab.unsaved': 'This file has unsaved changes that will be lost if you close it.',
   'confirm.closeTab.ok': 'Close',
+  'confirm.newScratch.title': 'Discard the scratch?',
+  'confirm.newScratch.body': 'The scratch has unsaved content that a new one will replace.',
+  'confirm.newScratch.ok': 'Discard and create',
   'panes.resize': 'Drag to resize the editor and output panels',
 
   // ---- Status bar ----
@@ -192,6 +195,8 @@ export const en: Dict = {
 
   // ---- Console ----
   'console.empty': '// console output shows up here',
+  'console.clear': 'Clear',
+  'console.omitted': (n: number) => `${n} earliest lines omitted`,
 
   // ---- 默认名字（会写到磁盘上） ----
   'file.untitled': (p) => `Untitled.${p.ext}`,
@@ -215,6 +220,7 @@ export const en: Dict = {
 
   // ---- 文件系统 ----
   'err.fs.noPicker': 'This browser cannot open local folders',
+  'err.fs.notAllowed': 'No permission to access this file or folder (it may be locked by another program, read-only, or access was revoked)',
   'err.fs.tooLarge': (p) => `${p.name} is ${p.size}, over the ${p.max} limit, so it was not opened`,
   'err.fs.binary': (p) => `${p.name} looks like a binary file, so it was not opened`,
   'err.fs.nameTaken': (p) =>
@@ -237,8 +243,6 @@ export const en: Dict = {
   'err.idb.abort': 'The IndexedDB transaction was aborted',
   'err.idb.fail': 'The IndexedDB transaction failed',
   // ---- 编译 / 运行 ----
-  'err.compile.initFailed': (p) =>
-    `Could not start the TypeScript compiler (esbuild wasm failed to load): ${p.message}`,
   'err.compile.failed': (p) =>
     `TypeScript compilation failed: ${p.issues
       .map(

@@ -98,6 +98,9 @@ export const zh = {
   'confirm.closeTab.title': (p: { name: string }) => `关闭 ${p.name}？`,
   'confirm.closeTab.unsaved': '该文件有未保存的修改，关闭将丢失这些修改。',
   'confirm.closeTab.ok': '关闭',
+  'confirm.newScratch.title': '清空草稿？',
+  'confirm.newScratch.body': '草稿里有未保存的内容，新建会把它清掉。',
+  'confirm.newScratch.ok': '清空并新建',
   'panes.resize': '拖拽调整编辑器与输出的宽度',
 
   // ---- 底部状态栏 ----
@@ -204,6 +207,8 @@ export const zh = {
 
   // ---- Console ----
   'console.empty': '// console 输出会显示在这里',
+  'console.clear': '清空',
+  'console.omitted': (n: number) => `已省略最早的 ${n} 条`,
 
   /* ---- 默认名字 ----
      这三条会真的落到磁盘上（新建时的预填名）。与 VS Code、资源管理器一致：
@@ -227,6 +232,7 @@ export const zh = {
 
   // ---- 文件系统 ----
   'err.fs.noPicker': '当前浏览器不支持打开本地目录',
+  'err.fs.notAllowed': '没有权限访问该文件或目录（可能被其他程序占用、只读，或授权已被撤销）',
   'err.fs.tooLarge': (p: { name: string; size: string; max: string }) =>
     `${p.name} 有 ${p.size}，超过 ${p.max} 上限，没有打开`,
   'err.fs.binary': (p: { name: string }) => `${p.name} 看起来是二进制文件，未打开`,
@@ -251,8 +257,6 @@ export const zh = {
   'err.idb.fail': 'IndexedDB 事务失败',
 
   // ---- 编译 / 运行 ----
-  'err.compile.initFailed': (p: { message: string }) =>
-    `TypeScript 编译器初始化失败（esbuild wasm 加载失败）：${p.message}`,
   // 逐条错误的位置写法和条目之间的分隔符都在这儿，compile.ts 只负责把结构化的 issues 传进来
   'err.compile.failed': (p: { issues: CompileIssue[] }) =>
     `TypeScript 编译失败：${p.issues
