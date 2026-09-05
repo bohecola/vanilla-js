@@ -1,5 +1,5 @@
 import { useRef, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react'
-import { monaco } from '@/monaco/setup'
+import { monaco, modelUri } from '@/monaco/setup'
 import type { editor as MonacoEditorType, IDisposable } from 'monaco-editor'
 import { debounce, sortBy } from 'lodash-es'
 import { useTheme } from '@/theme/index'
@@ -64,6 +64,10 @@ export interface EditorHandle {
 interface EditorProps {
   onDirtyChange?: (key: string, dirty: boolean) => void
   onSave?: () => void
+  /** Ctrl/Cmd+Enter */
+  onRun?: () => void
+  /** Shift+F5（VS Code 的「停止调试」） */
+  onStop?: () => void
   /** 光标位置或 model（切换文件）变化时上报当前光标 + 缩进，驱动状态栏 */
   onCursorStatus?: (status: CursorStatus) => void
 }
@@ -74,8 +78,6 @@ interface EditorProps {
  * 12 个足够覆盖「在几个文件间来回切」的实际用法。
  */
 const MAX_MODELS = 12
-
-const modelUri = (key: string) => monaco.Uri.parse(`inmemory://jotter/${encodeURIComponent(key)}`)
 
 interface ModelRecord {
   model: MonacoEditorType.ITextModel
@@ -89,7 +91,7 @@ interface ModelRecord {
 }
 
 const Editor = forwardRef<EditorHandle, EditorProps>(
-  ({ onDirtyChange, onSave, onCursorStatus }, ref) => {
+  ({ onDirtyChange, onSave, onRun, onStop, onCursorStatus }, ref) => {
   const editorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const modelsRef = useRef(new Map<string, ModelRecord>())
@@ -102,8 +104,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(
 
   // 回调走 ref：Monaco 命令和 window 监听都只注册一次，
   // 直接闭包捕获 prop 会永远调用首次渲染那一版
-  const callbacksRef = useRef({ onDirtyChange, onSave, onCursorStatus })
-  callbacksRef.current = { onDirtyChange, onSave, onCursorStatus }
+  const callbacksRef = useRef({ onDirtyChange, onSave, onRun, onStop, onCursorStatus })
+  callbacksRef.current = { onDirtyChange, onSave, onRun, onStop, onCursorStatus }
 
   // 创建 effect 刻意不依赖主题，用 ref 读当前值 —— 主题变化由下面的 effect 增量应用，
   // 放进依赖数组会让编辑器被重建
@@ -299,6 +301,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       callbacksRef.current.onSave?.()
     })
+    // 运行 / 停止也接在编辑器上：写完代码手不用离开键盘。
+    // Ctrl+Enter 原本是 Monaco 的「在下方插入一行」，playground 里运行更常用
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+      callbacksRef.current.onRun?.()
+    })
+    editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F5, () => {
+      callbacksRef.current.onStop?.()
+    })
 
     // 状态栏的「Ln, Col / 缩进」：光标动了或换 model 就上报一次。缩进配置在 model 上
     // （Monaco 会按文件内容自动推断空格 / Tab 和宽度），随 model 一起读即可。
@@ -340,14 +350,22 @@ const Editor = forwardRef<EditorHandle, EditorProps>(
     }
   }, [api, handleResize])
 
-  // 焦点不在编辑器里时（比如刚在侧边栏点了文件）也要能 Ctrl+S。
-  // hasTextFocus 的判断是为了不和上面 Monaco 的命令重复触发。
+  // 焦点不在编辑器里时（比如刚在侧边栏点了文件）也要能 Ctrl+S / Ctrl+Enter / Shift+F5。
+  // hasTextFocus 的判断是为了不和上面 Monaco 的命令重复触发；
+  // 输入框里（改名框、对话框）不抢：那里的回车另有含义。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 's') return
       if (editorRef.current?.hasTextFocus()) return
+      const el = document.activeElement
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
+      const mod = (e.ctrlKey || e.metaKey) && !e.altKey
+      let action: (() => void) | undefined
+      if (mod && e.key.toLowerCase() === 's') action = callbacksRef.current.onSave
+      else if (mod && e.key === 'Enter') action = callbacksRef.current.onRun
+      else if (e.shiftKey && e.key === 'F5') action = callbacksRef.current.onStop
+      if (!action) return
       e.preventDefault()
-      callbacksRef.current.onSave?.()
+      action()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)

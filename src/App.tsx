@@ -3,28 +3,20 @@ import { uniq } from 'lodash-es'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from '@/components/ui/context-menu'
-import { GithubMark } from './components/GithubMark'
-import { JotterMark } from './components/JotterMark'
 import Editor, { EditorHandle, type CursorStatus } from './components/Editor'
 import Console, { ConsoleHandle } from './components/Console'
+import { HeaderBar } from './components/HeaderBar'
+import { NoticeBar } from './components/NoticeBar'
+import { StatusBar } from './components/StatusBar'
+import { TabStrip } from './components/TabStrip'
+import { useNotice } from './hooks/useNotice'
+import { useTabs, ACTIVE_KEY } from './hooks/useTabs'
+import { useDemoSaver } from './hooks/useDemoSaver'
+import { useExternalChangeWatcher } from './hooks/useExternalChangeWatcher'
+import type { ActiveFile, Language, LocalMeta } from './types'
 import Sidebar from './components/Sidebar'
 import ConfirmDialog from './components/ConfirmDialog'
-import { listTemplates, loadAllTemplates, loadTemplate } from './hooks'
+import { listTemplates, loadTemplate } from './hooks'
 import { useWorkspace, type WorkspaceRoot } from './hooks/useWorkspace'
 import { useFileDraft } from './hooks/useFileDraft'
 import { useConfirm } from './hooks/useConfirm'
@@ -32,75 +24,21 @@ import {
   getLastModified,
   isRunnable,
   languageOf,
-  pickDirectory,
-  queryPermission,
   readTextFile,
-  removeEntry,
   writeTextFile,
   type Entry,
-  type FileEncoding,
   type FileEntry,
 } from './lib/fs-access'
 import { codeRunner } from './lib/runner'
-import { warmupCompiler } from './lib/compile'
-import { idbDel, idbGet } from './lib/idb'
-import {
-  DEMO_SAVE_KEY,
-  DEMO_SAVING_KEY,
-  type InterruptedSave,
-  type ResidualDemo,
-} from './hooks/useWorkspace'
-import { messageOf, useI18n, LANGS, type LangMode } from '@/i18n/context'
-import { useTheme, type Accent, type ThemeMode, ACCENTS } from './theme/index.tsx'
+import { startPointerDrag } from './lib/pointer-drag'
+import { shortcut, isRtl } from './lib/platform'
+import { useMediaQuery } from './hooks/useMediaQuery'
+import { messageOf, useI18n } from '@/i18n/context'
 
-const ACTIVE_KEY = 'jotter:activeKey'
-/** 「把全部 Demo 存到本地」时建的总目录名。纯 ASCII，跨系统都安全 */
-const DEMOS_DIR = 'jotter-demos'
-
-type Language = 'javascript' | 'typescript'
-
-/*
-  打开的文件用一个 key 唯一标识，它同时是 Monaco model 的 key 和侧边栏的选中态：
-    builtin:../template/overrides/call.js   内置 Demo（源码打包进来的，可改但存不回去）
-    local:src/lib/foo.ts                    用户本地目录里的文件，有 handle，能写回磁盘
-    scratch                                 「新建草稿」出来的空白草稿，也是首屏的默认
-    imported:foo.js                         通过 <input type=file> 导入的单个文件
-                                            （只有不支持目录 API 的浏览器上还有这个入口）
-  只有 local 这一种有 handle —— Ctrl+S 能真正落盘的也只有它，其余退回下载。
-*/
-interface ActiveFile {
-  key: string
-  kind: 'builtin' | 'local' | 'scratch' | 'imported'
-  /** 标题栏上显示的名字 */
-  name: string
-  language: string
-  /** 底部状态栏展示的编码。local 来自读盘时对 BOM 的推断；其余在浏览器里生成的
-      文件（内置示例 / 草稿 / 导入）按 UTF-8 报。 */
-  encoding: FileEncoding
-  handle?: FileSystemFileHandle
-}
-
-/** 读盘时记下的 mtime，用来判断磁盘上的文件是否被外部程序改过。 */
-interface LocalMeta {
-  handle: FileSystemFileHandle
-  lastModified: number
-  /** 该文件的编码推断结果，随 key 一起存，重开 / 改名后仍能对上。
-      undefined 表示没走读盘推断（浏览器里新生成的），按 UTF-8 报即可。 */
-  encoding?: FileEncoding
-}
-
-type NoticeTone = 'info' | 'warn' | 'error'
-interface Notice {
-  tone: NoticeTone
-  text: string
-}
-
-const NOTICE_STYLE: Record<NoticeTone, string> = {
-  info: 'border-[var(--border)] bg-[var(--panel-bg)] text-[var(--text-body)]',
-  warn: 'border-[var(--accent-symbol)]/40 bg-[var(--accent-symbol)]/10 text-[var(--accent-symbol)]',
-  error: 'border-[var(--accent-error)]/40 bg-[var(--accent-error)]/10 text-[var(--accent-error)]',
-}
-
+// 编辑器 / Console 分栏
+const CONSOLE_MIN = 220 // px，任何一侧至少保住的宽度
+const SNAP = 20 // px：距正中 50% 这么近就会被磁吸住
+const SNAP_RELEASE = 32 // px：已经吸在正中间后，得拖开这么远才挣脱（更强的顿感）
 // 按文件后缀猜语言（导入 .ts 文件时自动切到 TS，否则代码不会经过 TS 编译）
 function languageFromFilename(name: string): Language {
   return /\.(ts|tsx|mts|cts)$/i.test(name) ? 'typescript' : 'javascript'
@@ -112,55 +50,45 @@ function withLanguageExt(filename: string, language: string): string {
   return filename.replace(/\.(js|mjs|cjs|jsx|ts|tsx|mts|cts)$/i, `.${ext}`)
 }
 
-// 配色下拉里每个选项的「线稿小图标 + 它的颜色」：像儿童绘本里克制的一枚枚小画，干净又俏皮。
-// icon 存完整类名字面量（icon-[lucide--…]），Tailwind 需要源码里逐字出现才扫得到。
-// 标签文案走 i18n（header.accent.*）。
-type AccentLabelKey =
-  | 'header.accent.blue'
-  | 'header.accent.pink'
-  | 'header.accent.orange'
-  | 'header.accent.green'
-
-const ACCENT_META: Record<Accent, { icon: string; color: string; labelKey: AccentLabelKey }> = {
-  blue: { icon: 'icon-[lucide--droplet]', color: '#0ea5e9', labelKey: 'header.accent.blue' },
-  pink: { icon: 'icon-[lucide--flower]', color: '#ec4899', labelKey: 'header.accent.pink' },
-  orange: { icon: 'icon-[lucide--sun]', color: '#f97316', labelKey: 'header.accent.orange' },
-  green: { icon: 'icon-[lucide--leaf]', color: '#22c55e', labelKey: 'header.accent.green' },
-}
-
 function App() {
   const templates = listTemplates()
   const workspace = useWorkspace()
   // 这两个方法在 effect / useCallback 里用，摘出来当依赖：整个 workspace 当依赖的话
   // 每次目录树变动都会重跑，而这两处只关心「路径怎么解析」
   const { resolveFilePath, displayPath } = workspace
-  const { mode, setMode, accent, setAccent } = useTheme()
-  // 主题那边已经占了 mode / setMode，语言这两个改名区分
-  const { mode: langMode, setMode: setLangMode, t } = useI18n()
+  const { t } = useI18n()
   const confirm = useConfirm()
+  // 窄屏（手机竖屏）：编辑器与 Console 上下堆叠，分栏把手隐藏，侧栏默认收起（Sidebar 自己判断）
+  const narrow = useMediaQuery('(max-width: 767px)')
 
-  // ---- 多标签数据模型 ----
-  // 打开的标签按顺序存一份（VS Code 式），当前激活的是哪一个用 activeKey 记。
-  // `active` 是从它们派生的「当前文件」，保留这个名字是为了让 handleSave / 状态栏 /
-  // 运行等大量既存代码读 active 时不用改 —— 它们仍拿到「当前激活那个文件」。
-  const [tabs, setTabs] = useState<ActiveFile[]>([])
-  const [activeKey, setActiveKey] = useState<string | null>(null)
-  const active = tabs.find((x) => x.key === activeKey) ?? null
-  const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(new Set())
+  const editorRef = useRef<EditorHandle>(null)
+  const consoleRef = useRef<ConsoleHandle>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const localMetaRef = useRef(new Map<string, LocalMeta>())
+  // 「打开文件」的序号。读盘是异步的，快速连点两个文件时先点的可能后返回，
+  // 回来时对一下序号，过期的那次就别再往编辑器里塞了
+  const openSeqRef = useRef(0)
 
-  // 异步流程里（关了标签、草稿转正之类）读 state 会拿到旧值，同步一份到 ref 供回调用
-  const tabsLiveRef = useRef<ActiveFile[]>([])
-  const activeKeyLiveRef = useRef<string | null>(null)
-  useEffect(() => {
-    tabsLiveRef.current = tabs
-    activeKeyLiveRef.current = activeKey
-  }, [tabs, activeKey])
-
-  // 让 Editor 保住所有打开标签的 model（不被 LRU 淘汰），这样切标签时不重读盘、不丢光标。
-  const tabsKeys = tabs.map((x) => x.key)
-  useEffect(() => {
-    editorRef.current?.setPinnedKeys(tabsKeys)
-  }, [tabsKeys])
+  // ---- 多标签数据模型（见 hooks/useTabs）----
+  // `active` 是「当前激活那个文件」；handleSave / 状态栏 / 运行等大量代码读它。
+  const {
+    tabs,
+    setTabs,
+    activeKey,
+    setActiveKey,
+    active,
+    dirtyKeys,
+    activeRef,
+    dirtyRef,
+    handleDirtyChange,
+    openOrActivate,
+    switchTab,
+    dropTabsByKeys,
+    closeTab,
+    menuCloseOthers,
+    menuCloseToRight,
+    menuCloseAll,
+  } = useTabs({ editorRef, confirm, t, onEmpty: () => openScratch() })
 
   // ---- 编辑器 / 控制台 水平分栏 ----
   // editorW 为 null 表示未拖过：两栏各占一半（编辑器与输出都 flex-1）。
@@ -170,9 +98,6 @@ function App() {
   const [editorW, setEditorW] = useState<number | null>(null)
   /** 正在拖动分栏（用于给分隔带一个明显的“拖动中”高亮） */
   const [splitting, setSplitting] = useState(false)
-  const CONSOLE_MIN = 220 // px，任何一侧至少保住的宽度
-  const SNAP = 20 // px：距正中 50% 这么近就会被磁吸住
-  const SNAP_RELEASE = 32 // px：已经吸在正中间后，得拖开这么远才挣脱（更强的顿感）
   const startSplitDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
     const wrap = mainRef.current
@@ -187,8 +112,6 @@ function App() {
     let latched = false
 
     setSplitting(true)
-    const prevUserSelect = document.body.style.userSelect
-    document.body.style.userSelect = 'none' // 拖动中不选中文本
     // RTL（阿拉伯语）下 main 内的左右分栏会镜像：编辑器到右侧、输出到左侧，
     // 拖动方向与 LTR 相反，故增量取反（符号只在 RTL 下翻）。
     const sign = document.documentElement.dir === 'rtl' ? -1 : 1
@@ -211,304 +134,27 @@ function App() {
       const w = Math.min(Math.max(target, minW), Math.max(minW, maxW))
       setEditorW(Math.round(w))
     }
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = prevUserSelect
-      setSplitting(false)
-    }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-    document.body.style.cursor = 'col-resize'
-  }, [CONSOLE_MIN, SNAP, SNAP_RELEASE])
-
-  // ---- 标签栏横向滚动（同 VS Code：原生滚动条隐藏、不占高度，用悬浮细条替代）----
-  const tabScrollRef = useRef<HTMLDivElement | null>(null)
-  /** 悬浮进度条几何：x/w 是 thumb 相对 track 的 inline-start 的距离/宽（px）。x 是「距起点」，
-      渲染端用逻辑 insetInlineStart 定位，因此 LTR（起点在左）和 RTL（起点在右）都对。 */
-  const [tabBar, setTabBar] = useState({ x: 0, w: 0, overflow: false })
-  /** 正在拖 thumb：拖拽中即使鼠标移出标签区，进度条也保持显示（同 VS Code 的按住态） */
-  const [tabBarDragging, setTabBarDragging] = useState(false)
-  // Blink 下 RTL 溢出容器的 scrollLeft 是负区间 [-max, 0]（0=起点/最右，-max=尽头/最左），
-  // LTR 才是 [0, max]。把它归一成「0=起点、1=尽头」的进度，避免各处各自猜符号。
-  const tabIsRtl = () => document.documentElement.dir === 'rtl'
-  const tabProgress = (el: HTMLElement) => {
-    const max = el.scrollWidth - el.clientWidth
-    if (max <= 0) return 0
-    return tabIsRtl() ? -el.scrollLeft / max : el.scrollLeft / max
-  }
-  const tabSetProgress = (el: HTMLElement, p: number) => {
-    const max = el.scrollWidth - el.clientWidth
-    el.scrollLeft = tabIsRtl() ? -p * max : p * max
-  }
-  const updateTabScrollState = useCallback(() => {
-    const el = tabScrollRef.current
-    if (!el) return
-    const maxScroll = el.scrollWidth - el.clientWidth
-    const track = el.clientWidth
-    const overflow = maxScroll > 0
-    if (!overflow) {
-      setTabBar({ x: 0, w: 0, overflow: false })
-      return
-    }
-    // thumb 宽 ≈ track × (track / scrollWidth)，保个下限好抓
-    const w = Math.max(36, (track * track) / Math.max(el.scrollWidth, 1))
-    const x = tabProgress(el) * (track - w)
-    setTabBar({ x, w, overflow: true })
-  }, [])
-  // 底部悬浮 thumb 可拖拽横滚（同 VS Code）：按住左右拖，把 scrollLeft 带过去。
-  const tabBarDragRef = useRef<{ startX: number; startProgress: number } | null>(null)
-  const startTabBarDrag = (e: React.PointerEvent) => {
-    const el = tabScrollRef.current
-    if (!el) return
-    e.preventDefault()
-    // 记录起点归一化进度 + 指针物理 x。拖动中把「thumb 移动的物理像素」换算成内容像素，
-    // 用 tabSetProgress 写回 —— LTR/RTL 的符号都由它统一（thumb 从 inline-start 起算）。
-    tabBarDragRef.current = { startX: e.clientX, startProgress: tabProgress(el) }
-    // 全屏透明覆盖层：拖动期间盖在最上层，避免鼠标移到别处触发 hover / 选中文本，
-    // 让拖动稳定跟手。不加手型光标 —— 保持系统默认指针（同 VS Code）。松开移除。
-    const overlay = document.createElement('div')
-    overlay.style.cssText =
-      'position:fixed;inset:0;z-index:2147483647;touch-action:none;user-select:none;'
-    document.body.appendChild(overlay)
-    setTabBarDragging(true)
-    const move = (ev: PointerEvent) => {
-      const el2 = tabScrollRef.current
-      const st = tabBarDragRef.current
-      if (!el2 || !st) return
-      const track = el2.clientWidth
-      const maxPx = el2.scrollWidth - track
-      // 物理拖动增量 → 「toward-end」像素增量：LTR 前进方向=右(+)，RTL 前进方向=左(-)。
-      const towardEndPx = (tabIsRtl() ? -1 : 1) * (ev.clientX - st.startX)
-      const pxPerThumb = maxPx / Math.max(track - tabBar.w, 1)
-      const next = st.startProgress * maxPx + towardEndPx * pxPerThumb
-      tabSetProgress(el2, maxPx <= 0 ? 0 : Math.min(1, Math.max(0, next / maxPx)))
-    }
-    const up = () => {
-      setTabBarDragging(false)
-      overlay.remove()
-      tabBarDragRef.current = null
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-  }
-  useEffect(() => {
-    updateTabScrollState()
-    const el = tabScrollRef.current
-    if (!el) return
-    const ro = new ResizeObserver(updateTabScrollState)
-    ro.observe(el)
-    el.addEventListener('scroll', updateTabScrollState, { passive: true })
-    // 标签溢出时把普通鼠标滚轮转成横向滚动（同 VS Code：滚轮直接翻 tab，不滚页面）。
-    // 非 passive 才能 preventDefault 挡住页面纵向滚动。
-    const onWheel = (e: WheelEvent) => {
-      if (el.scrollWidth <= el.clientWidth) return // 没溢出就交给页面正常滚动
-      e.preventDefault()
-      // 用「距尽头的像素（0..max）」做增量，方向符号交给归一化 helper：
-      // LTR 下等价于 scrollLeft += deltaY + deltaX；RTL 下自动取对符号。
-      const max = el.scrollWidth - el.clientWidth
-      const cur = tabProgress(el) * max
-      const next = Math.min(max, Math.max(0, cur + e.deltaY + e.deltaX))
-      tabSetProgress(el, max <= 0 ? 0 : next / max)
-      updateTabScrollState()
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => {
-      ro.disconnect()
-      el.removeEventListener('scroll', updateTabScrollState)
-      el.removeEventListener('wheel', onWheel)
-    }
-  }, [updateTabScrollState, tabs.length])
-  // 切换激活标签时把它滚到可见（VS Code 行为）
-  useEffect(() => {
-    const el = tabScrollRef.current
-    if (!el || !activeKey) return
-    const act = el.querySelector('[data-active-tab="true"]') as HTMLElement | null
-    act?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    updateTabScrollState()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey, tabs.length])
-
-
-  // Editor 该切到哪个 model 由调用方在之前/之后用 editorRef.open 处理（见各 open 函数）。
-  const openOrActivate = useCallback((file: ActiveFile) => {
-    setTabs((prev) => {
-      const i = prev.findIndex((x) => x.key === file.key)
-      if (i === -1) return [...prev, file]
-      const next = [...prev]
-      next[i] = file
-      return next
-    })
-    setActiveKey(file.key)
+    startPointerDrag({ onMove, onEnd: () => setSplitting(false), cursor: 'col-resize' })
   }, [])
 
-  // 关闭某标签（供标签栏 × 用）。脏的走二次确认；关闭激活标签则切到相邻标签；
-  // 关到最后一个就退回一张空白草稿（与删除当前文件后 openScratch 一致）。
-  // 注意读的都是 live ref / 本处可拿到的稳定量 —— 关闭确认可能跨 await，不能吃旧 state。
-  const closeTab = useCallback(
-    async (key: string) => {
-      const curTabs = tabsLiveRef.current
-      const file = curTabs.find((x) => x.key === key)
-      if (!file) return
-      if (dirtyRef.current.has(key)) {
-        const ok = await confirm.ask({
-          title: t('confirm.closeTab.title', { name: file.name }),
-          lines: [t('confirm.closeTab.unsaved')],
-          confirmText: t('confirm.closeTab.ok'),
-          tone: 'danger',
-        })
-        if (!ok) return
-      }
-      editorRef.current?.close(key)
-      handleDirtyChange(key, false)
-      const idx = curTabs.findIndex((x) => x.key === key)
-      const next = curTabs.filter((x) => x.key !== key)
-      setTabs(next)
-      if (activeKeyLiveRef.current === key) {
-        if (next.length === 0) {
-          setActiveKey(null)
-          openScratch() // 全关完 → 空白草稿
-        } else {
-          // 优先右边邻居，到头了用左边
-          const pick = next[Math.min(idx, next.length - 1)] ?? next[next.length - 1]
-          setActiveKey(pick.key)
-          editorRef.current?.open({ key: pick.key, value: '', language: pick.language })
-        }
-      }
-    },
-    // handleDirtyChange / openScratch 在本渲染作用域里声明得比这里靠后；把它们加进依赖数组
-    // 会在渲染期求值时抛 TDZ（先访问后声明），故此处有意省略。closeTab 只在事件里触发，
-    // 拿到的都是 live ref / 最新值，不会被「旧闭包」坑到。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [confirm, t]
-  )
-
-  // 从标签里移除一批 key（目录删除 / 移除根目录时用），并从 tabs / activeKey 里同步清掉。
-  // 返回「被移除的标签里是否包含当前激活的」，调用方据此决定要不要 openScratch 兜底。
-  const dropTabsByKeys = useCallback((keys: string[]) => {
-    const kset = new Set(keys)
-    const cur = activeKeyLiveRef.current
-    const removedActive = !!cur && kset.has(cur)
-    if (removedActive) setActiveKey(null)
-    setTabs((prev) => prev.filter((x) => !kset.has(x.key)))
-    return removedActive
-  }, [])
-
-  // 切换到已打开的标签（点标签栏）：把 Editor 切到那个 model，不重读内容
-  const switchTab = useCallback((key: string) => {
-    if (key === activeKeyLiveRef.current) return
-    const file = tabsLiveRef.current.find((x) => x.key === key)
-    if (!file) return
-    setActiveKey(key)
-    editorRef.current?.open({ key, value: '', language: file.language })
-  }, [])
-
-  // 批量关闭一批标签（标签右键菜单：关闭其他/右侧/全部）。只要这批里含未保存的脏标签，
-  // 就先弹一次确认带过整批；然后逐个 editor.close 并从 tabs 里移除；若删掉了当前激活的，
-  // 就在剩余里选一个激活（优先 prefer，其次最左），一个不剩就退回空白草稿。
-  const closeMany = useCallback(
-    async (keysToClose: string[], prefer?: string) => {
-      const curTabs = tabsLiveRef.current
-      const kset = new Set(keysToClose)
-      const targets = curTabs.filter((x) => kset.has(x.key))
-      if (targets.length === 0) return
-      const dirtyCount = targets.filter((x) => dirtyRef.current.has(x.key)).length
-      if (dirtyCount > 0) {
-        const ok = await confirm.ask({
-          title:
-            dirtyCount === 1
-              ? t('confirm.closeMany.one')
-              : t('confirm.closeMany.many', { count: dirtyCount }),
-          lines: [t('confirm.closeMany.unsaved')],
-          confirmText: t('confirm.closeTab.ok'),
-          tone: 'danger',
-        })
-        if (!ok) return
-      }
-      for (const x of targets) {
-        editorRef.current?.close(x.key)
-        handleDirtyChange(x.key, false)
-      }
-      const remaining = curTabs.filter((x) => !kset.has(x.key))
-      setTabs(remaining)
-      const curActive = activeKeyLiveRef.current
-      if (curActive && kset.has(curActive)) {
-        if (remaining.length === 0) {
-          setActiveKey(null)
-          openScratch()
-        } else {
-          const pick = remaining.find((x) => x.key === prefer) ?? remaining[0]
-          setActiveKey(pick.key)
-          editorRef.current?.open({ key: pick.key, value: '', language: pick.language })
-        }
-      }
-    },
-    // 同 closeTab：handleDirtyChange / openScratch 声明在本函数靠后，加入 deps 会触发 TDZ。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [confirm, t]
-  )
-
-  // 标签右键菜单命令（同 VS Code）：
-  // 关闭本标签 / 关闭其他 / 关闭右侧 / 关闭全部
-  const menuCloseOthers = useCallback(
-    (key: string) => closeMany(tabsLiveRef.current.filter((x) => x.key !== key).map((x) => x.key), key),
-    [closeMany]
-  )
-  const menuCloseToRight = useCallback(
-    (key: string) => {
-      const cur = tabsLiveRef.current
-      const i = cur.findIndex((x) => x.key === key)
-      if (i === -1) return
-      closeMany(cur.slice(i + 1).map((x) => x.key), key)
-    },
-    [closeMany]
-  )
-  const menuCloseAll = useCallback(
-    () => closeMany(tabsLiveRef.current.map((x) => x.key)),
-    [closeMany]
-  )
 
 
   // 底部状态栏的「Ln, Col / Spaces: N」来源，由 Editor 上报（光标移动 / 换文件时刷新）
   const [cursor, setCursor] = useState<CursorStatus | null>(null)
   const [running, setRunning] = useState(false)
-  const [notice, setNotice] = useState<Notice | null>(null)
-  /** 把 Demo 存到本地时的写入进度（null 表示当前没有正在进行的保存） */
-  const [saveProgress, setSaveProgress] = useState<{
-    file: string
-    doneFiles: number
-    totalFiles: number
-    writtenBytes: number
-    totalBytes: number
-  } | null>(null)
-  /** 写入 demo 时置 true，writeFilesInto 每写一个文件前检查它；取消后立即复位 */
-  const cancelSaveRef = useRef(false)
-  /** 是否正在执行取消（点了确认、在清理残留）。用于把取消按钮置灰防重复 */
-  const [cancelling, setCancelling] = useState(false)
+  const { notice, setNotice } = useNotice()
+  const { saveProgress, cancelling, saveDemos, cancelSave } = useDemoSaver({
+    workspace,
+    confirm,
+    t,
+    setNotice,
+  })
   /** 单个文件保存的防重入锁：写入中再按 Ctrl+S 直接忽略，避免叠加/排队 */
   const savingRef = useRef(false)
   /** 是否正在保存当前文件。用于禁用保存按钮并显示「保存中…」，避免用户以为卡死 */
   const [saving, setSaving] = useState(false)
 
-  const editorRef = useRef<EditorHandle>(null)
-  const consoleRef = useRef<ConsoleHandle>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const localMetaRef = useRef(new Map<string, LocalMeta>())
 
-  // 只注册一次的回调（Ctrl+S、window focus）要读到最新状态，走 ref。
-  // 写 ref 放在 effect 里而不是渲染中：渲染阶段写 ref 会被 react-hooks 规则拦下，
-  // 而这两个 ref 只有用户交互时才读，晚一个 commit 也没关系。
-  const activeRef = useRef<ActiveFile | null>(null)
-  const dirtyRef = useRef(dirtyKeys)
-  useEffect(() => {
-    activeRef.current = active
-  }, [active])
-  useEffect(() => {
-    dirtyRef.current = dirtyKeys
-  }, [dirtyKeys])
 
   /*
     runner 是模块级单例，拿不到 hook，报错文案只能由这里注入。
@@ -529,11 +175,6 @@ function App() {
   const language = active?.language ?? 'javascript'
   const runnable = isRunnable(language)
 
-  // 切到 TS 时提前初始化 esbuild wasm（~10MB），别等到点「运行」才干等
-  useEffect(() => {
-    if (language === 'typescript') warmupCompiler()
-  }, [language])
-
   useEffect(() => () => codeRunner.destroy(), [])
 
   useEffect(() => {
@@ -541,40 +182,18 @@ function App() {
     return () => codeRunner.setOnDone(null)
   }, [])
 
-  // info 类提示是「已保存」这种一次性反馈，自己消失；warn / error 要留着等用户看见
-  useEffect(() => {
-    if (notice?.tone !== 'info') return
-    const timer = setTimeout(() => setNotice(null), 2500)
-    return () => clearTimeout(timer)
-  }, [notice])
 
-  useEffect(() => {
-    if (!active) return
-    try {
-      localStorage.setItem(ACTIVE_KEY, active.key)
-    } catch {
-      // 记不住就记不住
-    }
-  }, [active])
-
-  const handleDirtyChange = useCallback((key: string, dirty: boolean) => {
-    setDirtyKeys((prev) => {
-      if (prev.has(key) === dirty) return prev
-      const next = new Set(prev)
-      if (dirty) next.add(key)
-      else next.delete(key)
-      return next
-    })
-  }, [])
 
   const openTemplate = useCallback(
     async (path: string) => {
       const key = `builtin:${path}`
       const name = path.replace('../template/', '')
+      const seq = ++openSeqRef.current
       try {
         // Demo 源码是打包进来的字符串，重复读代价忽略不计；
         // model 已经存在时 open() 会忽略 value，用户改过的内容不会被冲掉
         const code = await loadTemplate(path)
+        if (seq !== openSeqRef.current) return // 期间用户又打开了别的
         const language = languageFromFilename(name)
         editorRef.current?.open({ key, value: code, language })
         openOrActivate({ key, kind: 'builtin', name, language, encoding: 'UTF-8' })
@@ -586,7 +205,7 @@ function App() {
         })
       }
     },
-    [t, openOrActivate]
+    [setNotice, t, openOrActivate]
   )
 
   const openLocalFile = useCallback(
@@ -597,18 +216,19 @@ function App() {
         return
       }
       const key = `local:${entry.path}`
+      const seq = ++openSeqRef.current
       try {
         if (editorRef.current?.has(key)) {
           // model 还在（可能有未保存改动），只切过去，不重新读盘
           editorRef.current.open({ key, value: '', language })
           if (!localMetaRef.current.has(key)) {
-            localMetaRef.current.set(key, {
-              handle: entry.handle,
-              lastModified: await getLastModified(entry.handle),
-            })
+            const lastModified = await getLastModified(entry.handle)
+            if (seq !== openSeqRef.current) return
+            localMetaRef.current.set(key, { handle: entry.handle, lastModified })
           }
         } else {
           const { text, lastModified, encoding } = await readTextFile(entry.handle)
+          if (seq !== openSeqRef.current) return // 期间用户又点开了别的文件，这次作废
           editorRef.current?.open({ key, value: text, language })
           localMetaRef.current.set(key, { handle: entry.handle, lastModified, encoding })
         }
@@ -626,24 +246,45 @@ function App() {
         setNotice({ tone: 'error', text: messageOf(err, t) })
       }
     },
+    [setNotice, t, openOrActivate]
+  )
+
+  /**
+   * 切到草稿标签。model 可能早就存在（上次的草稿），open 不会动它的内容。
+   * reset 才清空 —— 只有「新建草稿」这一个入口该清；关掉最后一个标签、删掉当前文件之类的
+   * 兜底路径只是需要一个能落脚的标签，不能顺手把用户写在草稿里的东西抹掉。
+   */
+  const openScratch = useCallback(
+    (opts?: { reset?: boolean }) => {
+      const key = 'scratch'
+      editorRef.current?.open({ key, value: '', language: 'javascript' })
+      if (opts?.reset) editorRef.current?.replace(key, '')
+      openOrActivate({
+        key,
+        kind: 'scratch',
+        name: t('file.scratch'),
+        language: 'javascript',
+        encoding: 'UTF-8',
+      })
+      consoleRef.current?.clear()
+      editorRef.current?.focus()
+    },
     [t, openOrActivate]
   )
 
-  const openScratch = useCallback(() => {
-    const key = 'scratch'
-    editorRef.current?.open({ key, value: '', language: 'javascript' })
-    // model 可能早就存在（上次的草稿），open 不会动它的内容，这里显式清空
-    editorRef.current?.replace(key, '')
-    openOrActivate({
-      key,
-      kind: 'scratch',
-      name: t('file.scratch'),
-      language: 'javascript',
-      encoding: 'UTF-8',
-    })
-    consoleRef.current?.clear()
-    editorRef.current?.focus()
-  }, [t, openOrActivate])
+  /** 侧栏的「新建草稿」：草稿里有没保存的内容就先问一句，再清空 */
+  const handleNewScratch = useCallback(async () => {
+    if (dirtyRef.current.has('scratch')) {
+      const ok = await confirm.ask({
+        title: t('confirm.newScratch.title'),
+        lines: [t('confirm.newScratch.body')],
+        confirmText: t('confirm.newScratch.ok'),
+        tone: 'danger',
+      })
+      if (!ok) return
+    }
+    openScratch({ reset: true })
+  }, [dirtyRef, confirm, t, openScratch])
 
   /*
     删除 / 改名的收尾工作。
@@ -747,7 +388,9 @@ function App() {
   /**
    * 新 handle 只能重新从磁盘取：目录改名实际是「整棵复制一份 + 删掉原来的」，
    * 缓存里那些 handle 指向的都是已经被删掉的旧目录。
-   * lastModified 基线保留 —— 内容没变，没必要让 focus 时的对比误报一次外部改动。
+   * 文件改名（真正的 move）内容和 mtime 都没变，lastModified 基线保留；
+   * 目录改名是复制出来的新文件，mtime 是「现在」，得重新取一次，
+   * 否则下次窗口 focus 对比 mtime 时整棵子树都会误报一次「外部修改」。
    */
   async function handleRenamed(from: Entry, to: Entry) {
     // 收集「改名后每个旧 key → 新信息」的映射，最后统一刷一次 tabs / activeKey。
@@ -767,11 +410,9 @@ function App() {
       localMetaRef.current.delete(oldKey)
       const handle = to.kind === 'file' ? to.handle : await resolveFilePath(newPath)
       if (handle && meta) {
-        localMetaRef.current.set(newKey, {
-          handle,
-          lastModified: meta.lastModified,
-          encoding: meta.encoding,
-        })
+        const lastModified =
+          to.kind === 'file' ? meta.lastModified : await getLastModified(handle).catch(() => meta.lastModified)
+        localMetaRef.current.set(newKey, { handle, lastModified, encoding: meta.encoding })
       }
       const existing = tabs.find((x) => x.key === oldKey)
       if (existing) {
@@ -837,9 +478,12 @@ function App() {
     // 那个根这次在不在、有没有权限，拿不到就退回空白草稿
     if (saved?.startsWith('local:')) {
       const path = saved.slice('local:'.length)
-      void resolveFilePath(path).then((handle) =>
-        handle ? openLocalFile({ kind: 'file', name: handle.name, path, handle }) : openScratch()
-      )
+      void resolveFilePath(path)
+        .then((handle) =>
+          handle ? openLocalFile({ kind: 'file', name: handle.name, path, handle }) : openScratch()
+        )
+        // 解析失败（目录已失效之类）也得有个能落脚的标签，别停在一个标签都没有的状态
+        .catch(() => openScratch())
       return
     }
     // 上次在看某个 Demo 就接上（前提是它还在）。其余情况一律空白 ——
@@ -852,10 +496,11 @@ function App() {
     openScratch()
   }, [workspace.ready, resolveFilePath, templates, openTemplate, openLocalFile, openScratch])
 
-  // 正在写 demo 时离开/刷新：尽力弹一次确认。浏览器可能淡化甚至不显示自定义文案，
-  // 但这是唯一不需要持久化就能拦一下的手段；真正的兜底在下面那条「上次没存完」提示。
+  // 正在写 demo、或有文件改了还没保存时离开/刷新：尽力弹一次确认。浏览器可能淡化甚至
+  // 不显示自定义文案，但这是唯一不需要持久化就能拦一下的手段；
+  // demo 那边真正的兜底在下面那条「上次没存完」提示。
   useEffect(() => {
-    if (saveProgress === null) return
+    if (saveProgress === null && dirtyKeys.size === 0) return
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault()
       // 一些浏览器要求设置了 returnValue 才会弹
@@ -863,212 +508,7 @@ function App() {
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [saveProgress])
-
-  // 检测到「上次没存完」的 demo 残留时，引导清理。清理直接用左侧已打开根目录的
-  // handle 删，不需要重新选文件夹（父目录已在侧边栏且已授权）。
-  const handleDetectedResiduals = useCallback(
-    async (residuals: { root: WorkspaceRoot; demo: ResidualDemo }[]) => {
-      const ok = await confirm.ask({
-        title: t('confirm.cleanupInterrupted.title'),
-        lines: [
-          t('confirm.cleanupInterrupted.bodyMultiple', {
-            labels: residuals.map((r) => r.demo.label).join('、'),
-          }),
-        ],
-        confirmText: t('confirm.cleanupInterrupted.ok'),
-        tone: 'danger',
-      })
-      if (!ok) return
-      let cleaned = 0
-      for (const { root, demo } of residuals) {
-        try {
-          await removeEntry(root.handle, demo.dirName, 'directory')
-          cleaned += 1
-        } catch {
-          // 单个失败不影响其他；失败的那个可能是权限问题，留给用户自行处理
-        }
-      }
-      await idbDel(DEMO_SAVE_KEY).catch(() => {})
-      try {
-        sessionStorage.removeItem(DEMO_SAVING_KEY)
-      } catch {
-        /* ignore */
-      }
-      if (cleaned > 0) {
-        setNotice({ tone: 'info', text: t('notice.demoSaveCleaned', { count: cleaned }) })
-      }
-    },
-    [confirm, t]
-  )
-
-  // 主判据：IndexedDB 里那条「进行中」记录。优先用左侧已打开、可写的根目录 handle 来删
-  // （记录里存的 parent handle 刷新后可能陈旧、removeEntry 会拒绝），找不到才让用户重选。
-  const handleInterruptedRecord = useCallback(
-    async (record: InterruptedSave) => {
-      const ok = await confirm.ask({
-        title: t('confirm.cleanupInterrupted.title'),
-        lines: [t('confirm.cleanupInterrupted.bodyRecord', { label: record.label })],
-        confirmText: t('confirm.cleanupInterrupted.ok'),
-        tone: 'danger',
-      })
-      if (!ok) return
-      // 清理记录/标记：删成功、或残留目录已不存在（NotFound）都算完事
-      const clearSave = () => {
-        void idbDel(DEMO_SAVE_KEY).catch(() => {})
-        try {
-          sessionStorage.removeItem(DEMO_SAVING_KEY)
-        } catch {
-          /* ignore */
-        }
-      }
-      // 尝试删；目录已不存在时返回 'gone'，删成功返回 'ok'，其它错误抛出
-      const tryRemove = async (dir: FileSystemDirectoryHandle): Promise<'ok' | 'gone'> => {
-        try {
-          await removeEntry(dir, record.dirName, 'directory')
-          return 'ok'
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'NotFoundError') return 'gone'
-          throw err
-        }
-      }
-      // 优先用左侧已打开、且名字对得上的根目录 handle —— 它是最活跃、肯定可写的那个
-      const openRoot = workspace.roots.find(
-        (r) => !r.needsPermission && r.handle.name === record.parent.name
-      )
-      const target = openRoot?.handle ?? record.parent
-      const perm = await queryPermission(target, 'readwrite').catch(() => 'unavailable')
-      if (perm === 'granted') {
-        try {
-          const outcome = await tryRemove(target)
-          clearSave()
-          setNotice({
-            tone: 'info',
-            text: outcome === 'gone' ? t('notice.demoSaveGone') : t('notice.demoSaveCleaned', { count: 1 }),
-          })
-        } catch (err) {
-          setNotice({ tone: 'error', text: messageOf(err, t) })
-        }
-        return
-      }
-      // 权限不足或句柄陈旧：重新选一次父文件夹来重新授权，再删
-      const parent = await pickDirectory().catch(() => null)
-      if (!parent) return // 用户取消，记录留着下次再说
-      try {
-        const outcome = await tryRemove(parent)
-        clearSave()
-        setNotice({
-          tone: 'info',
-          text: outcome === 'gone' ? t('notice.demoSaveGone') : t('notice.demoSaveCleaned', { count: 1 }),
-        })
-      } catch (err) {
-        setNotice({ tone: 'error', text: messageOf(err, t) })
-      }
-    },
-    [confirm, t, workspace.roots]
-  )
-
-  // 打开页面后，等目录恢复完，先看同步「正在保存」标记和 IndexedDB 记录，都没有再扫磁盘兜底。
-  const cleanupPromptedRef = useRef(false)
-  useEffect(() => {
-    if (cleanupPromptedRef.current || !workspace.ready) return
-    cleanupPromptedRef.current = true
-    let cancelled = false
-    void (async () => {
-      // 1) 同步「正在保存」标记：同标签页刷新后第一次加载就能读到，不受 IndexedDB 事务时序影响
-      let savingMark = false
-      try {
-        savingMark = sessionStorage.getItem(DEMO_SAVING_KEY) === '1'
-      } catch {
-        /* ignore */
-      }
-      // 2) 主判据：进行中记录。写入中途刷新/失败会留下它，全部写完才删。
-      //    注意这里不读 cancelled：StrictMode 下 effect 会被双调用、cleanup 会把上一次
-      //    的 cancelled 置 true，若主判据也受它影响，记录明明在却会被跳过、不弹窗。
-      const record = await idbGet<InterruptedSave>(DEMO_SAVE_KEY).catch(() => null)
-      if (record) {
-        void handleInterruptedRecord(record)
-        return
-      }
-      // 3) 标记在但记录丢了（极端情况），扫磁盘兜底
-      if (savingMark) {
-        const found: { root: WorkspaceRoot; demo: ResidualDemo }[] = []
-        for (const root of workspace.roots) {
-          if (root.needsPermission) continue
-          const demos = await workspace.detectResidualDemos(root)
-          for (const demo of demos) found.push({ root, demo })
-        }
-        if (found.length > 0) void handleDetectedResiduals(found)
-        return
-      }
-      // 4) 纯磁盘扫描兜底：记录丢了也没标记（比如旧版本），主动扫已授权 root
-      const found: { root: WorkspaceRoot; demo: ResidualDemo }[] = []
-      for (const root of workspace.roots) {
-        if (root.needsPermission) continue
-        const demos = await workspace.detectResidualDemos(root)
-        for (const demo of demos) found.push({ root, demo })
-      }
-      if (!cancelled && found.length > 0) void handleDetectedResiduals(found)
-    })()
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace.ready, handleInterruptedRecord, handleDetectedResiduals])
-
-  /**
-   * 把全部 Demo 存进用户选的文件夹。
-   *
-   * 这是「真的想拿它们练手」的入口：builtin: 那条路能改但存不回去（源码是打包进来的
-   * 字符串），落到磁盘上之后它们就是普通的本地文件，Ctrl+S 直接写回。
-   */
-  async function handleSaveDemos() {
-    let files
-    try {
-      files = await loadAllTemplates()
-    } catch (err) {
-      setNotice({ tone: 'error', text: t('notice.demoReadFailed', { message: messageOf(err, t) }) })
-      return
-    }
-    // 写磁盘前先确认一次：会建目录、落文件，误点会把一堆文件写进用户文件夹
-    const proceed = await confirm.ask({
-      title: t('confirm.saveDemos.title'),
-      lines: [t('confirm.saveDemos.body', { count: files.length })],
-      confirmText: t('confirm.saveDemos.ok'),
-    })
-    if (!proceed) return
-    // 这里不提前 setSaveProgress：saveBundle 第一步是弹文件夹选择框，用户还没选、
-    // 还没开始写入，这时候显示「正在写入」是错的。进度面板交给 writeFilesInto 在
-    // 真正开始落盘时再亮起（见下方 onProgress 的首次回调）。
-    cancelSaveRef.current = false
-    try {
-      const saved = await workspace.saveBundle(DEMOS_DIR, files, {
-        onProgress: (p) => setSaveProgress(p),
-        shouldCancel: () => cancelSaveRef.current,
-        onOpen: async ({ label, count }) => {
-          // 落盘之后问一句：把选中的文件夹接管成左侧根目录是会改变界面布局的动作，
-          // 应该由用户明确同意才做，而不是默认静默执行。
-          return await confirm.ask({
-            title: t('confirm.openDemos.title'),
-            lines: [t('confirm.openDemos.body', { count, label })],
-            confirmText: t('confirm.openDemos.ok'),
-          })
-        },
-      })
-      // null 有两种：用户在选择器里取消（不该有任何动静），或者出错
-      // （原因已经在侧边栏那条 workspace.error 提示条上了）
-      if (!saved) return
-      setNotice({
-        tone: 'info',
-        text: saved.opened
-          ? t('notice.demosSaved', { count: saved.count, label: saved.label })
-          : t('notice.demosSavedClosed', { count: saved.count, label: saved.label }),
-      })
-    } finally {
-      setSaveProgress(null)
-      setCancelling(false)
-    }
-  }
+  }, [saveProgress, dirtyKeys])
 
   function handleImport() {
     fileInputRef.current?.click()
@@ -1078,25 +518,15 @@ function App() {
   // 所以只能给这个；用户可自行在资源管理器 / Finder 里按路径定位。
   function handleCopyPath(path: string) {
     const label = workspace.displayPath(path)
+    // 非安全上下文（http 局域网地址）没有 clipboard，之前 ?. 一短路就什么都不说
+    if (!navigator.clipboard) {
+      setNotice({ tone: 'error', text: t('notice.copyFailed') })
+      return
+    }
     navigator.clipboard
-      ?.writeText(label)
+      .writeText(label)
       .then(() => setNotice({ tone: 'info', text: t('notice.pathCopied', { path: label }) }))
       .catch(() => setNotice({ tone: 'error', text: t('notice.copyFailed') }))
-  }
-
-  // 写入 demo 时用户点了「取消」：先二次确认（会删掉已写文件），确认后才置标志。
-  // writeFilesInto 会在下一个文件前停下，saveBundle 的 catch 里删掉残留目录并返回 null。
-  async function handleCancelSave() {
-    if (cancelling) return
-    const ok = await confirm.ask({
-      title: t('confirm.cancelSave.title'),
-      lines: [t('confirm.cancelSave.body')],
-      confirmText: t('confirm.cancelSave.ok'),
-      tone: 'danger',
-    })
-    if (!ok) return
-    setCancelling(true)
-    cancelSaveRef.current = true
   }
 
   function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
@@ -1182,48 +612,17 @@ function App() {
     }
     // fileDraft 每次渲染都是新对象，这个 useCallback 实际不再缓存 —— 无所谓：
     // Editor 是通过 ref 读 onSave 的，换个函数身份不会让它重建
-  }, [workspace.hasRoot, workspace.target, displayPath, fileDraft, t])
+  }, [activeRef, setNotice, workspace.hasRoot, workspace.target, displayPath, fileDraft, t])
 
-  /*
-    回到页面时对一下 mtime。没有文件监听 API，这是唯一能发现「文件被别的编辑器改过」
-    的时机，也正好是用户从别处切回来的那一刻。
-    干净就静默重载，脏了就只提示 —— 直接覆盖用户没保存的改动是最不该做的事。
-  */
-  useEffect(() => {
-    const onFocus = async () => {
-      const file = activeRef.current
-      if (file?.kind !== 'local' || !file.handle) return
-      const meta = localMetaRef.current.get(file.key)
-      if (!meta) return
-      try {
-        if ((await getLastModified(file.handle)) === meta.lastModified) return
-        if (dirtyRef.current.has(file.key)) {
-          setNotice({
-            tone: 'warn',
-            text: t('notice.externalChanged', { name: file.name }),
-          })
-          return
-        }
-        const { text, lastModified, encoding } = await readTextFile(file.handle)
-        editorRef.current?.replace(file.key, text)
-        localMetaRef.current.set(file.key, { handle: file.handle, lastModified, encoding })
-        // 正在看的这个文件编码也可能被外部改过，顺手刷新对应标签 / 状态栏的编码
-        setTabs((prev) => prev.map((x) => (x.key === file.key ? { ...x, encoding } : x)))
-        setNotice({ tone: 'info', text: t('notice.reloaded', { name: file.name }) })
-      } catch {
-        // 文件被删/被移走，等用户自己刷新目录，不用弹提示打扰
-      }
-    }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [t])
+
+  useExternalChangeWatcher({ activeRef, dirtyRef, localMetaRef, editorRef, setTabs, setNotice, t })
 
   // 运行：在 Web Worker 里执行用户代码，主线程不卡，死循环也能用「停止」强制终止。
-  // TS 代码会先在主线程用 esbuild 转成 JS（首次需要等 wasm 就绪）。
+  // TS 代码先由 Monaco 的 TS worker 转成 JS（见 lib/compile.ts）。
   function runCode() {
     if (!active || !runnable) return
     consoleRef.current?.clear()
-    void codeRunner.run(editorRef.current?.getValue(active.key) ?? '', language)
+    void codeRunner.run(editorRef.current?.getValue(active.key) ?? '', language, active.key)
     setRunning(true)
   }
 
@@ -1233,209 +632,12 @@ function App() {
     setRunning(false)
   }
 
-  // 底部状态栏左侧要展示「目录 + 文件名」，像 VS Code 那样一条横排、目录淡色文件名高亮。
-  // 只有 local（key=local:<相对根路径>）与 builtin（name 本身就是它相对 demo 根的子路径，
-  // 例如 overrides/promise-order.js）带目录可拆；导入 / 草稿没有目录归属，只显示裸名。
-  const footerLoc =
-    active == null
-      ? null
-      : (() => {
-          const logical =
-            active.kind === 'local'
-              ? displayPath(active.key.slice('local:'.length))
-              : active.name
-          const i = logical.lastIndexOf('/')
-          return i === -1
-            ? { dir: '', file: logical }
-            : { dir: logical.slice(0, i), file: logical.slice(i + 1) }
-        })()
-
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[var(--app-bg)] text-[var(--text-primary)]">
       {/* 顶部工具栏 */}
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--border)] bg-[var(--panel-bg)] px-4 py-3">
-        <div className="flex items-center gap-2 text-base font-semibold">
-          <JotterMark className="size-5" />
-          Jotter
-        </div>
+      <HeaderBar showImport={!workspace.supported} onImport={handleImport} />
 
-        {/* 「新建」挪到文件栏的标题行上去了：它和那边的「新建文件 / 新建文件夹」是一类事，
-            顶栏留给运行相关的东西。
-            「导入」只在不支持目录 API 的浏览器上留着 —— 那里没有「打开文件夹」，
-            这个隐藏的 <input type=file> 是唯一能读到本地文件的路（侧栏那段提示也指着它）。
-            Chromium 上它是纯冗余：导进来的文件存不回原处，只能下载。 */}
-        {!workspace.supported && (
-          <>
-            <div aria-hidden className="h-5 w-px shrink-0 bg-[var(--border)]" />
-            <Button variant="ghost" size="sm" onClick={handleImport}>
-              <Icon className="icon-[lucide--upload]" />
-              {t('header.import')}
-            </Button>
-          </>
-        )}
-
-        <div className="ml-auto flex items-center gap-2">
-          {/* 语言显示移到底部状态栏（见页面底部），右上角不再放语言徽标 */}
-
-          {/* 语言。形状与右边的主题下拉完全同构（多态 + 跟随系统）。
-              触发器固定用 languages 图标，不随当前值变 —— 没有哪两个图标能自明地
-              代表「语言」这种概念，图标一直换反而看不出按钮是干什么的。
-              各语言项的名字刻意不翻译（用各自母语写）：看不懂当前界面语言的人，
-              正需要用目标语言认出自己那一项。 */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                title={t('header.lang')}
-                aria-label={t('header.lang')}
-                className="text-[var(--text-muted)]"
-              >
-                <Icon className="icon-[lucide--languages]" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
-              <DropdownMenuRadioGroup
-                value={langMode}
-                onValueChange={(value) => setLangMode(value as LangMode)}
-              >
-                {LANGS.map(({ value, label }) => (
-                  <DropdownMenuRadioItem key={value} value={value}>
-                    <span className="font-medium">{label}</span>
-                  </DropdownMenuRadioItem>
-                ))}
-                <DropdownMenuSeparator />
-                <DropdownMenuRadioItem value="system">
-                  <Icon className="icon-[lucide--monitor]" />
-                  {t('header.lang.system')}
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* 配色：蓝 / 粉 / 橙 / 绿，配上面那个明暗一起用（蓝黑 / 粉白……）。
-              trigger 图标用当前配色的高亮主色来画，一眼看出现在是哪档色 */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                title={t('header.accent')}
-                aria-label={t('header.accent')}
-                className="text-[var(--text-muted)]"
-              >
-                <Icon className="icon-[lucide--palette]" style={{ color: 'var(--accent-number)' }} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[8.5rem]">
-              <DropdownMenuRadioGroup
-                value={accent}
-                onValueChange={(value) => setAccent(value as Accent)}
-              >
-                {/* 竖排列表：每行一枚代表该配色的线稿小图标 + 名字，像儿童绘本里克制的一排小画。
-                    当前配色不铺整行底色（那样会和相邻行的 hover 底贴在一起），改用在当前色里
-                    着色的名字 + 右端亮起的对勾来表达选中 —— 干净，且和悬停互不粘连 */}
-                {ACCENTS.map((a) => {
-                  const meta = ACCENT_META[a]
-                  const selected = a === accent
-                  return (
-                    <DropdownMenuRadioItem
-                      key={a}
-                      value={a}
-                      title={t(meta.labelKey)}
-                      className="gap-2.5 pr-3"
-                    >
-                      <Icon
-                        className={cn('size-4', meta.icon)}
-                        style={{ color: meta.color }}
-                      />
-                      <span
-                        className="min-w-0 flex-1"
-                        style={selected ? { color: meta.color } : undefined}
-                      >
-                        {t(meta.labelKey)}
-                      </span>
-                    </DropdownMenuRadioItem>
-                  )
-                })}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                title={t('header.theme')}
-                aria-label={t('header.theme')}
-                className="text-[var(--text-muted)]"
-              >
-                {mode === 'light' ? (
-                  <Icon className="icon-[lucide--sun]" />
-                ) : mode === 'dark' ? (
-                  <Icon className="icon-[lucide--moon]" />
-                ) : (
-                  <Icon className="icon-[lucide--monitor]" />
-                )}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuRadioGroup
-                value={mode}
-                onValueChange={(value) => setMode(value as ThemeMode)}
-              >
-                <DropdownMenuRadioItem value="dark">
-                  <Icon className="icon-[lucide--moon]" />
-                  {t('header.theme.dark')}
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="light">
-                  <Icon className="icon-[lucide--sun]" />
-                  {t('header.theme.light')}
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="system">
-                  <Icon className="icon-[lucide--monitor]" />
-                  {t('header.theme.system')}
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <Button
-            asChild
-            variant="ghost"
-            size="icon-sm"
-            className="text-[var(--text-muted)]"
-            title={t('header.github')}
-          >
-            <a
-              href="https://github.com/bohecola/jotter"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={t('header.github')}
-            >
-              <GithubMark className="size-[18px]" />
-            </a>
-          </Button>
-        </div>
-      </header>
-
-      {/* 一条通用提示位：保存结果、外部改动、权限被拒、非文本文件都走这里 */}
-      {notice && (
-        <div
-          className={`flex items-start gap-2 border-b px-4 py-2 text-[13px] ${NOTICE_STYLE[notice.tone]}`}
-        >
-          <span className="min-w-0 flex-1">{notice.text}</span>
-          <button
-            type="button"
-            onClick={() => setNotice(null)}
-            aria-label={t('notice.close')}
-            className="shrink-0 opacity-70 hover:opacity-100"
-          >
-            <Icon className="icon-[lucide--x] size-4" />
-          </button>
-        </div>
-      )}
+      <NoticeBar notice={notice} onClose={() => setNotice(null)} />
 
       <div className="flex min-h-0 flex-1">
         <Sidebar
@@ -1444,11 +646,11 @@ function App() {
           templates={templates}
           activeKey={active?.key ?? null}
           dirtyKeys={dirtyKeys}
-          onNewScratch={openScratch}
+          onNewScratch={() => void handleNewScratch()}
           onOpenTemplate={(path) => void openTemplate(path)}
           onOpenLocalFile={(entry) => void openLocalFile(entry)}
-          onSaveDemos={() => void handleSaveDemos()}
-          onCancelSave={() => void handleCancelSave()}
+          onSaveDemos={() => void saveDemos()}
+          onCancelSave={() => void cancelSave()}
           cancelling={cancelling}
           saveProgress={saveProgress}
           onRenameEntry={fileDraft.startRename}
@@ -1460,15 +662,15 @@ function App() {
         {/* 主区域：编辑器 + 输出。铺满剩余空间，中间/外边不留距，两者可拖拽分栏 */}
         <main
           ref={mainRef}
-          className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+          className="flex min-h-0 min-w-0 flex-1 overflow-hidden max-md:flex-col"
         >
-          {/* 左：编辑器 */}
+          {/* 左：编辑器（窄屏时在上） */}
           <section
             data-editor-pane
-            style={editorW === null ? undefined : { width: editorW, flex: '0 0 auto' }}
+            style={editorW === null || narrow ? undefined : { width: editorW, flex: '0 0 auto' }}
             className={cn(
               'flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--panel-bg)]',
-              editorW === null && 'flex-1'
+              (editorW === null || narrow) && 'flex-1'
             )}
           >
             {/* 编辑器头部（单行，与 Console 头部同高同线）：左=可滚动标签区，右=动作簇。
@@ -1479,110 +681,16 @@ function App() {
               {/* 标签区（无左右箭头，滚动靠滚轮 / 悬浮进度条，同 VS Code）。
                   外层用命名 group/tabs 控进度条浮现，避免它作为裸 .group 把每个 tab
                   的 group-hover 一并点亮（那样整排关闭按钮会一起出现） */}
-              <div className="group/tabs relative min-w-0 flex-1">
-                <div
-                  ref={tabScrollRef}
-                  className="tabs-scrollbar absolute inset-0 flex items-stretch overflow-x-auto"
-                >
-              {tabs.map((tab) => {
-                const isActive = tab.key === activeKey
-                const dirtyTab = dirtyKeys.has(tab.key)
-                const tabName = tab.kind === 'scratch' ? t('file.scratch') : tab.name
-                return (
-                  <ContextMenu key={tab.key}>
-                    <ContextMenuTrigger asChild>
-                      <div
-                        data-active-tab={isActive ? 'true' : undefined}
-                        className={cn(
-                          // 激活：顶部主色横线 + 正文色底（向下融入编辑器）；非激活：浅一档底、
-                          // 顶部无横线。每个 tab 行末都留一条细线作相邻分隔（含激活）。
-                          // 用 border-e：RTL（阿拉伯语）时该分隔自动落在正确一侧
-                          'group flex min-w-0 shrink-0 items-stretch border-e border-e-[var(--border)]',
-                          isActive
-                            ? 'border-t-2 border-t-[var(--primary)] bg-[var(--tab-active-bg)]'
-                            : 'border-t-2 border-t-transparent bg-[var(--tab-inactive-bg)]'
-                        )}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => switchTab(tab.key)}
-                          title={tabName}
-                          className={cn(
-                            'flex min-w-0 items-center gap-1.5 py-1.5 ps-2 pe-1 font-mono text-[12.5px]',
-                            isActive
-                              ? 'text-[var(--text-body)]'
-                              : 'text-[var(--text-muted)] hover:text-[var(--text-body)]'
-                          )}
-                        >
-                          <span className="max-w-[140px] truncate">{tabName}</span>
-                          {dirtyTab && (
-                            <span
-                              title={t('editor.dirty')}
-                              className="size-2 shrink-0 rounded-full bg-[var(--accent-symbol)]"
-                            />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={t('tab.closeAria', { name: tabName })}
-                          title={t('tab.close')}
-                          onClick={() => void closeTab(tab.key)}
-                          className={cn(
-                            'my-auto flex h-6 w-5 shrink-0 items-center justify-center rounded-sm text-[var(--text-faint)] transition-opacity hover:bg-[var(--panel-hover)] hover:text-[var(--text-body)]',
-                            isActive
-                              ? 'opacity-100'
-                              : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'
-                          )}
-                        >
-                          <Icon className="icon-[lucide--x] size-3.5" />
-                        </button>
-                      </div>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent
-                      className="min-w-[160px]"
-                      onCloseAutoFocus={(e) => e.preventDefault()}
-                    >
-                      <ContextMenuItem onSelect={() => void closeTab(tab.key)}>
-                        {t('tab.ctx.close')}
-                      </ContextMenuItem>
-                      <ContextMenuItem onSelect={() => void menuCloseOthers(tab.key)}>
-                        {t('tab.ctx.closeOthers')}
-                      </ContextMenuItem>
-                      <ContextMenuItem onSelect={() => void menuCloseToRight(tab.key)}>
-                        {t('tab.ctx.closeRight')}
-                      </ContextMenuItem>
-                      <ContextMenuSeparator />
-                      <ContextMenuItem
-                        variant="destructive"
-                        onSelect={() => void menuCloseAll()}
-                      >
-                        {t('tab.ctx.closeAll')}
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                )
-              })}
-                </div>
-                {/* 悬浮进度条：绝对贴容器底部、不占高度，方形直角、3px 半透明（同 VS Code），
-                    悬停标签栏才浮现；只在标签溢出时出现。浮现后可按住 thumb 左右拖拽横滚 */}
-                {tabBar.overflow && (
-                  <div
-                    aria-hidden
-                    onPointerDown={startTabBarDrag}
-                    className={cn(
-                      'absolute inset-x-0 bottom-0 h-[10px] touch-none',
-                      tabBarDragging
-                        ? 'opacity-100'
-                        : 'pointer-events-none opacity-0 transition-opacity duration-150 group-hover/tabs:pointer-events-auto group-hover/tabs:opacity-100'
-                    )}
-                  >
-                    <div
-                      className="pointer-events-none absolute bottom-0 h-[3px] bg-[var(--border-strong)]/60"
-                      style={{ width: tabBar.w, insetInlineStart: tabBar.x }}
-                    />
-                  </div>
-                )}
-              </div>
+              <TabStrip
+                tabs={tabs}
+                activeKey={activeKey}
+                dirtyKeys={dirtyKeys}
+                onSwitch={switchTab}
+                onClose={(key) => void closeTab(key)}
+                onCloseOthers={(key) => void menuCloseOthers(key)}
+                onCloseToRight={(key) => void menuCloseToRight(key)}
+                onCloseAll={() => void menuCloseAll()}
+              />
               {/* 动作簇：保存/下载、停止、运行，针对当前激活文件，固定在一端。用 border-s：
                   RTL 下该分隔自动落在朝向标签区的一侧 */}
               <div className="flex shrink-0 items-center gap-0.5 border-s border-[var(--border)] px-1.5">
@@ -1619,7 +727,7 @@ function App() {
                   className="text-[var(--accent-error)] hover:bg-[var(--accent-error)]/10 hover:text-[var(--accent-error)]"
                   onClick={stopCode}
                   disabled={!running}
-                  title={t('editor.stop')}
+                  title={`${t('editor.stop')} (${shortcut.stop})`}
                   aria-label={t('editor.stop')}
                 >
                   <Icon className="icon-[lucide--square]" />
@@ -1627,7 +735,7 @@ function App() {
                 {/* Run 禁用时按钮是 pointer-events-none，title 不弹；用外层 span 承载说明 */}
                 <span
                   className="inline-flex"
-                  title={runnable ? t('editor.run') : t('editor.runDisabled')}
+                  title={runnable ? `${t('editor.run')} (${shortcut.run})` : t('editor.runDisabled')}
                 >
                   <Button
                     variant="ghost"
@@ -1646,6 +754,8 @@ function App() {
             <div className="min-h-0 flex-1">
               <Editor
                 ref={editorRef}
+                onRun={runCode}
+                onStop={stopCode}
                 onDirtyChange={handleDirtyChange}
                 onSave={handleSave}
                 onCursorStatus={setCursor}
@@ -1658,10 +768,25 @@ function App() {
           {/* 拖拽分栏：命中区本身铺面板色，因此不露 app 背景、没有“暗缝”；两栏基本紧贴，
               平时只留一根细缝线，鼠标放上去加粗到 4px 并亮主色，拖动时保持 hover 那个亮度 */}
           <div
+            role="separator"
+            aria-orientation="vertical"
+            tabIndex={0}
             onPointerDown={startSplitDrag}
+            // 键盘也能调：左右方向键每次挪 24px（RTL 下方向反过来）
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+              const wrap = mainRef.current
+              if (!wrap) return
+              e.preventDefault()
+              const wrapW = wrap.getBoundingClientRect().width
+              const cur = wrap.querySelector('[data-editor-pane]')?.getBoundingClientRect().width ?? wrapW / 2
+              const sign = (e.key === 'ArrowRight') === !isRtl() ? 1 : -1
+              const next = Math.min(Math.max(cur + sign * 24, CONSOLE_MIN), Math.max(CONSOLE_MIN, wrapW - CONSOLE_MIN))
+              setEditorW(Math.round(next))
+            }}
             title={t('panes.resize')}
             aria-label={t('panes.resize')}
-            className="group relative w-[5px] shrink-0 cursor-col-resize touch-none select-none bg-[var(--panel-bg)]"
+            className="group relative w-[5px] shrink-0 cursor-col-resize touch-none select-none bg-[var(--panel-bg)] outline-none focus-visible:bg-[var(--primary)]/30 max-md:hidden"
           >
             <span
               className={cn(
@@ -1672,9 +797,18 @@ function App() {
               )}
             />
           </div>
-          <section className="flex min-h-0 min-w-[220px] flex-1 flex-col overflow-hidden bg-[var(--panel-bg)]">
-            <div className="flex h-9 shrink-0 items-center border-b border-[var(--border)] px-3 text-[12.5px] tracking-wide text-[var(--text-muted)]">
-              Console
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--panel-bg)] max-md:min-h-[180px] max-md:border-t max-md:border-[var(--border)] md:min-w-[220px]">
+            <div className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--border)] pl-3 pr-1.5 text-[12.5px] tracking-wide text-[var(--text-muted)]">
+              <span>Console</span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => consoleRef.current?.clear()}
+                title={t('console.clear')}
+                aria-label={t('console.clear')}
+              >
+                <Icon className="icon-[lucide--ban]" />
+              </Button>
             </div>
             <div className="min-h-0 flex-1">
               <Console ref={consoleRef} />
@@ -1683,62 +817,7 @@ function App() {
         </main>
       </div>
 
-      {/* 底部状态栏：左侧「目录 / 文件名」一段横排，目录和文件名同色（faint 淡灰），
-          只靠顺序与省略号传达层级，不抢注意力；右侧从左到右依次是光标 Ln, Col、缩进
-          （Spaces / Tab Size）、编码（本地文件按 BOM 推断）、换行符（LF / CRLF）和语言
-          （跟随后缀自动判断），同 VS Code 右下角。 */}
-      <footer className="flex shrink-0 items-baseline gap-3 border-t border-[var(--border)] bg-[var(--panel-bg)] px-4 py-1 text-[11px] text-[var(--text-faint)]">
-        <span className="flex min-w-0 flex-1 items-baseline">
-          {footerLoc ? (
-            <>
-              {footerLoc.dir ? (
-                <span
-                  className="min-w-0 truncate"
-                  title={`${footerLoc.dir}/${footerLoc.file}`}
-                >
-                  {footerLoc.dir}/
-                </span>
-              ) : null}
-              <span className="shrink-0">{footerLoc.file}</span>
-            </>
-          ) : (
-            <span className="truncate">{t('statusbar.noFile')}</span>
-          )}
-        </span>
-        {active && cursor?.position && (
-          <span className="shrink-0">
-            {t('statusbar.ln', {
-              line: cursor.position.line,
-              col: cursor.position.column,
-            })}
-          </span>
-        )}
-        {active && cursor && (
-          <span className="shrink-0">
-            {cursor.useTabs
-              ? t('statusbar.tabSize', { size: cursor.indentSize })
-              : t('statusbar.spaces', { size: cursor.indentSize })}
-          </span>
-        )}
-        {active && (
-          <>
-            <span className="shrink-0" title={active.encoding}>
-              {active.encoding}
-            </span>
-            <span aria-hidden className="h-3 w-px shrink-0 bg-[var(--border)]" />
-            <span className="shrink-0">{cursor?.eol ?? 'LF'}</span>
-            <span aria-hidden className="h-3 w-px shrink-0 bg-[var(--border)]" />
-            <span
-              className="shrink-0"
-              title={
-                language === 'typescript' ? t('statusbar.ts') : t('statusbar.js')
-              }
-            >
-              {language === 'typescript' ? 'TypeScript' : 'JavaScript'}
-            </span>
-          </>
-        )}
-      </footer>
+      <StatusBar active={active} cursor={cursor} language={language} displayPath={displayPath} />
 
       {/* 隐藏的文件选择框，用于「导入」按钮读取本地代码文件（那个按钮只在不支持
           目录 API 的浏览器上出现）。

@@ -17,6 +17,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { startPointerDrag } from '@/lib/pointer-drag'
+import { isMac } from '@/lib/platform'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { MAX_ENTRIES_PER_DIR, languageOf, type Entry, type FileEntry } from '@/lib/fs-access'
 import { translate, useI18n, type T } from '@/i18n/context'
 import { rootAsEntry, type Workspace, type WorkspaceRoot } from '@/hooks/useWorkspace'
@@ -125,7 +128,7 @@ function SmoothProgressBar({ value }: { value: number }) {
  *
  * t 是传进来的而不是在函数里取的 —— 这是个纯函数，不是组件，钩子在这里用不了。
  */
-function groupTemplates(paths: string[], t: T) {
+function groupTemplates(paths: readonly string[], t: T) {
   const byDir = groupBy(paths, (path) => {
     const rel = path.replace('../template/', '')
     const slash = rel.lastIndexOf('/')
@@ -185,6 +188,8 @@ function Row({
   return (
     <button
       type="button"
+      role="treeitem"
+      aria-selected={isSelected}
       title={label}
       // style 要和外面传进来的合并：ContextMenuTrigger asChild 会往下塞一个
       // style（WebkitTouchCallout），直接 {...rest} 会把这里的缩进整个顶掉
@@ -255,7 +260,7 @@ function EntryMenu({
           {t('menu.rename')}
           {/* 快捷键：macOS 回车、其它平台 F2 */}
           <ContextMenuShortcut>
-            {/mac/i.test(navigator.platform || navigator.userAgent) ? 'Enter' : 'F2'}
+            {isMac ? 'Enter' : 'F2'}
           </ContextMenuShortcut>
         </ContextMenuItem>
         {/* 图标显式给 text-destructive：菜单项里没写颜色的图标会被统一压成 muted，
@@ -386,6 +391,9 @@ function RootRow({
   return (
     <div className="group flex items-center gap-0.5 pr-1">
       <button
+        role="treeitem"
+        aria-expanded={open}
+        aria-selected={selected}
         type="button"
         title={
           locked
@@ -449,7 +457,7 @@ function RootRow({
             type="button"
             title={t('sidebar.rootMenu', { name: root.name })}
             aria-label={t('sidebar.rootMenu', { name: root.name })}
-            className="shrink-0 rounded-sm p-0.5 text-[var(--text-faint)] opacity-0 transition-opacity group-hover:opacity-100 hover:bg-[var(--panel-hover)] hover:text-[var(--text-body)] focus-visible:opacity-100 data-[state=open]:opacity-100"
+            className="shrink-0 rounded-sm p-0.5 text-[var(--text-faint)] opacity-0 transition-opacity group-hover:opacity-100 hover:bg-[var(--panel-hover)] hover:text-[var(--text-body)] focus-visible:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
           >
             <Icon className="icon-[lucide--ellipsis] size-3.5" />
           </button>
@@ -574,6 +582,7 @@ function Tree({
             <Row
               depth={depth}
               label={entry.name}
+              aria-expanded={open}
               dimmed={entry.ignored}
               selected={selectedId === dirSelId(entry.path)}
               icon={
@@ -651,7 +660,7 @@ function Tree({
   }
 
   return (
-    <ul>
+    <ul role="group">
       {drafting && <DraftRow depth={depth} draft={draft} value={drafting} />}
       {listing.entries.map(rowFor)}
       {listing.entries.length === 0 && !drafting && (
@@ -679,7 +688,7 @@ export interface SidebarProps {
   workspace: Workspace
   draft: FileDraft
   /** 内置 Demo 的 glob 路径列表 */
-  templates: string[]
+  templates: readonly string[]
   activeKey: string | null
   dirtyKeys: Set<string>
   /** 开一份空白草稿。不落在任何目录里，Ctrl+S 时再决定存到哪 */
@@ -731,11 +740,20 @@ export default function Sidebar({
   const [width, setWidth] = useState(readWidth)
   const [collapsed, setCollapsed] = useState(() => {
     try {
-      return localStorage.getItem(COLLAPSED_KEY) === '1'
+      const saved = localStorage.getItem(COLLAPSED_KEY)
+      if (saved !== null) return saved === '1'
     } catch {
-      return false
+      /* 读不到就按默认来 */
     }
+    // 没存过：手机竖屏上侧栏会占掉大半个屏幕，默认收起
+    return typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 767px)').matches
   })
+  // 中途变窄（旋转平板、缩小窗口）也收起；变宽不自动展开，由用户决定。
+  // 窄屏期间的收起状态不落盘，回到桌面尺寸时仍是用户原来的选择
+  const narrow = useMediaQuery('(max-width: 767px)')
+  useEffect(() => {
+    if (narrow) setCollapsed(true)
+  }, [narrow])
   // Demo 这一段默认收起：它是「要用的时候才翻开」的东西，
   // 首屏摊开一堆别人的文件名，会把上面真正在用的本地目录挤下去
   const [templatesOpen, setTemplatesOpen] = useState(() => {
@@ -816,12 +834,6 @@ export default function Sidebar({
     if (!el) return
     e.preventDefault()
     vDragRef.current = { startY: e.clientY, startTop: el.scrollTop }
-    // 全屏透明覆盖层：拖动期间盖在最上层，避免鼠标移到别处触发 hover / 选中文本，
-    // 让拖动稳定跟手。不加手型光标 —— 保持系统默认指针（同 VS Code）。松开移除。
-    const overlay = document.createElement('div')
-    overlay.style.cssText =
-      'position:fixed;inset:0;z-index:2147483647;touch-action:none;user-select:none;'
-    document.body.appendChild(overlay)
     setVBarDragging(true)
     const move = (ev: PointerEvent) => {
       const el2 = vScrollRef.current
@@ -832,19 +844,21 @@ export default function Sidebar({
       const ratio = (sh - ch) / Math.max(ch - vBar.h, 1)
       el2.scrollTop = st.startTop + (ev.clientY - st.startY) * ratio
     }
-    const up = () => {
-      setVBarDragging(false)
-      overlay.remove()
-      vDragRef.current = null
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
+    // 全屏遮罩：拖动期间指针划过别处不触发 hover / 选中文本。不加手型光标（同 VS Code）
+    startPointerDrag({
+      onMove: move,
+      onEnd: () => {
+        setVBarDragging(false)
+        vDragRef.current = null
+      },
+      overlay: true,
+    })
   }
 
   // 最近一次在侧边栏点击的条目（目录或文件）。重命名快捷键（F2 / Mac 回车）作用于它。
   const selectedEntryRef = useRef<Entry | null>(null)
+  // 侧栏根元素：重命名快捷键只在焦点落在侧栏里时响应
+  const panelRef = useRef<HTMLDivElement | null>(null)
 
   // 全局选中行 id（同 VS Code：同一时刻整条侧栏只有一行高亮）。
   // 文件 / 模板行的 id 就是它们的打开 key（local:… / builtin:…），目录 / 根是带前缀的
@@ -856,51 +870,62 @@ export default function Sidebar({
     if (activeKey) setSelectedId(activeKey)
   }, [activeKey])
 
-  // macOS 上「回车」进入重命名，其它平台回车另有他用，F2 全平台通用
-  const isMac =
-    typeof navigator !== 'undefined' &&
-    (navigator.platform?.toLowerCase().includes('mac') ||
-      navigator.userAgent.toLowerCase().includes('mac'))
+  // macOS 上「回车」进入重命名，其它平台回车另有他用，F2 全平台通用（isMac 见 lib/platform）
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // 输入框聚焦时不响应：重命名框里回车=保存、Escape=取消
+      if (e.key !== 'F2' && !(e.key === 'Enter' && isMac)) return
+      // 只在焦点落在侧栏里时响应。之前是全局的：点过一次树里的条目之后，焦点落在
+      // 任何按钮上（确认框的「删除」、运行、标签页）按回车都会被这里吞掉去改名。
       const el = document.activeElement
-      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
+      if (!el || !panelRef.current?.contains(el)) return
+      // 输入框聚焦时不响应：重命名框里回车=保存、Escape=取消
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
       const entry = selectedEntryRef.current
       if (!entry) return
-      if (e.key === 'F2' || (e.key === 'Enter' && isMac)) {
-        e.preventDefault()
-        onRenameEntry(entry)
+      // 条目可能已经被删掉 / 所在根已移除：树里找不到就不再对它改名
+      const root = workspace.rootOf(entry.path)
+      const parentPath = entry.path.slice(0, entry.path.lastIndexOf('/'))
+      const listing = workspace.childrenByPath.get(parentPath)
+      const stillThere =
+        root !== null && (listing ? listing.entries.some((x) => x.path === entry.path) : entry.path === root.id)
+      if (!stillThere) {
+        selectedEntryRef.current = null
+        return
       }
+      e.preventDefault()
+      onRenameEntry(entry)
     }
-    // 用捕获阶段：点文件后焦点进了编辑器，编辑器的 keydown 可能在冒泡阶段 stopPropagation，
-    // 冒泡阶段的 window 监听就收不到 F2 了。捕获阶段先于编辑器触发，最稳。
+    // 用捕获阶段：树里的行是 button，某些组件会在冒泡阶段 stopPropagation，捕获阶段最稳
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [isMac, onRenameEntry])
+  }, [onRenameEntry, workspace])
 
   useEffect(() => {
     try {
       localStorage.setItem(WIDTH_KEY, String(width))
-      localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0')
+      if (!narrow) localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0')
       localStorage.setItem(TEMPLATES_KEY, templatesOpen ? '1' : '0')
       localStorage.removeItem(LEGACY_TEMPLATES_KEY)
     } catch {
       // 记不住就记不住
     }
-  }, [width, collapsed, templatesOpen])
+  }, [width, collapsed, templatesOpen, narrow])
 
   // 转圈至少持续 REFRESH_SPIN_MS，否则「点了刷新」这件事用户根本看不见。
   // 期间再点直接忽略，免得转圈被下一次点击打断又重来。
   async function handleRefresh() {
     if (refreshing) return
     setRefreshing(true)
-    await Promise.all([
-      workspace.refresh(workspace.target),
-      new Promise((resolve) => setTimeout(resolve, REFRESH_SPIN_MS)),
-    ])
-    setRefreshing(false)
+    try {
+      await Promise.all([
+        workspace.refresh(workspace.target),
+        new Promise((resolve) => setTimeout(resolve, REFRESH_SPIN_MS)),
+      ])
+    } finally {
+      // refresh 抛错也要把转圈停下来，否则 `if (refreshing) return` 会把按钮永久锁死
+      setRefreshing(false)
+    }
   }
 
   // 手写拖拽：pointer 事件挂在 window 上，指针移出把手甚至移出窗口也不会中断。
@@ -917,23 +942,18 @@ export default function Sidebar({
     setDragging(true)
     clearResizeHoverTimer()
     setResizeHover(true)
-    const onMove = (ev: PointerEvent) => {
-      setWidth(clamp(startWidth + sign * (ev.clientX - startX), MIN_WIDTH, MAX_WIDTH))
-    }
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      document.body.style.removeProperty('cursor')
-      document.body.style.removeProperty('user-select')
-      setDragging(false)
-      clearResizeHoverTimer()
-      setResizeHover(false)
-    }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
     // 拖动期间锁住光标和选区，否则鼠标划过编辑器会选中一大片文字
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
+    startPointerDrag({
+      onMove: (ev) => {
+        setWidth(clamp(startWidth + sign * (ev.clientX - startX), MIN_WIDTH, MAX_WIDTH))
+      },
+      onEnd: () => {
+        setDragging(false)
+        clearResizeHoverTimer()
+        setResizeHover(false)
+      },
+      cursor: 'col-resize',
+    })
   }, [])
 
   if (collapsed) {
@@ -963,6 +983,7 @@ export default function Sidebar({
 
   return (
     <div
+      ref={panelRef}
       style={{ width }}
       className="relative flex shrink-0 flex-col overflow-hidden bg-[var(--panel-bg)]"
     >
@@ -1084,7 +1105,7 @@ export default function Sidebar({
             </Button>
           </div>
         ) : (
-          <>
+          <div role="tree" aria-label={t('sidebar.localDirs')}>
             {workspace.roots.map((root) => (
               <div key={root.id}>
                 <RootRow
@@ -1123,7 +1144,7 @@ export default function Sidebar({
                 {t('sidebar.reauthHint', { label: t('sidebar.needAuth') })}
               </p>
             )}
-          </>
+          </div>
         )}
 
         {saveProgress && (
@@ -1300,12 +1321,21 @@ export default function Sidebar({
       <div
         role="separator"
         aria-orientation="vertical"
+        tabIndex={0}
         onPointerDown={startDrag}
+        // 键盘也能调：左右方向键每次挪 16px（RTL 下方向反过来）
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+          e.preventDefault()
+          const rtl = document.documentElement.dir === 'rtl'
+          const sign = (e.key === 'ArrowRight') === !rtl ? 1 : -1
+          setWidth((w) => clamp(w + sign * 16, MIN_WIDTH, MAX_WIDTH))
+        }}
         onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
         onMouseEnter={armResizeHover}
         onMouseLeave={disarmResizeHover}
         title={t('sidebar.resize')}
-        className="absolute inset-y-0 end-0 z-10 w-[6px] cursor-col-resize"
+        className="absolute inset-y-0 end-0 z-10 w-[6px] cursor-col-resize outline-none focus-visible:bg-[var(--primary)]/30"
       >
         <span
           className={cn(
