@@ -57,7 +57,7 @@ export const zh = {
   'settings.editorTheme.dark': '深色',
   'settings.editorTheme.light': '浅色',
   'settings.wordWrap': '自动换行',
-  'settings.minimap': '小地图',
+  'settings.minimap': '缩略图',
   'settings.lineNumbers': '行号',
   'settings.fontLigatures': '连字',
   'settings.fontLigatures.hint': '把 =>、!=、>= 这类符号组合连成一个整体图形，只对 Fira Code、JetBrains Mono 等支持连字的字体有效',

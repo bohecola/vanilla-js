@@ -44,7 +44,7 @@ export const zhHant: Dict = {
   'settings.editorTheme.dark': '深色',
   'settings.editorTheme.light': '淺色',
   'settings.wordWrap': '自動換行',
-  'settings.minimap': '小地圖',
+  'settings.minimap': '縮圖',
   'settings.lineNumbers': '行號',
   'settings.fontLigatures': '連字',
   'settings.fontLigatures.hint': '將 =>、!=、>= 這類符號組合連成一個整體圖形，只對 Fira Code、JetBrains Mono 等支援連字的字型有效',
