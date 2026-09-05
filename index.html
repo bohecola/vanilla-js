@@ -46,63 +46,41 @@
         同理，首帧之前定下语言：<html lang> 与标题在 React 挂载前就已经被读走（浏览器
         标签页、辅助技术、拼写检查都看它们），英文用户不该先看到一帧中文标题。
 
-        html.lang 的取值、受支持的取值集合，与 src/i18n/context.ts 保持一致
-        （context.ts 的 LANGS / langFromTag / readLangMode）。
+        语言表与各语言标题由 vite.config.ts 里的插件从 src/i18n/langs.ts 与各字典注入
+        （下面两个 __JOTTER_*__ 占位符），这里不再手抄一份。
+        「按系统语言归位」的规则与 langs.ts 的 langFromTag 一致：中文按地区分简繁，其余按主语言码。
         <html dir> 也在这里先定（阿拉伯语 rtl），否则 RTL 会闪一帧错方向。
         标题由运行期 dict 里的 html.title 兜底精确覆盖，这里只求首帧方向/语言不错。
       */
       ;(function () {
-        var LANG_ATTR = {
-          zh: 'zh-CN',
-          zhHant: 'zh-Hant',
-          en: 'en',
-          fr: 'fr',
-          de: 'de',
-          it: 'it',
-          ko: 'ko',
-          ja: 'ja',
-          vi: 'vi',
-          pt: 'pt',
-          ar: 'ar'
-        }
-        var TITLE = {
-          'zh-CN': 'Jotter · JS / TS 代码草稿纸',
-          en: 'Jotter · JS / TS scratchpad'
-        }
+        var LANG_TAGS = {"zh":"zh-CN","zhHant":"zh-Hant","en":"en","fr":"fr","de":"de","it":"it","ko":"ko","ja":"ja","vi":"vi","pt":"pt","ar":"ar"}
+        var TITLES = {"zh-CN":"Jotter · JS / TS 代码草稿纸","zh-Hant":"Jotter · JS / TS 程式草稿紙","en":"Jotter · JS / TS scratchpad","fr":"Jotter · Bloc-notes JS / TS","de":"Jotter · JS/TS-Notizzettel","it":"Jotter · Blocco note JS / TS","ko":"Jotter · JS / TS 메모장","ja":"Jotter · JS / TS スクラッチパッド","vi":"Jotter · Nháp JS / TS","pt":"Jotter · Rascunho JS / TS","ar":"Jotter · مسوّدة JS / TS"}
         var mode = 'system'
         try {
           var saved = localStorage.getItem('jotter:lang')
-          if (saved === 'system' || (saved && saved in LANG_ATTR)) mode = saved
+          if (saved === 'system' || (saved && Object.prototype.hasOwnProperty.call(LANG_TAGS, saved))) mode = saved
         } catch (e) {
           /* 隐私模式下 localStorage 可能抛错，退回跟随系统 */
         }
-        var sys = navigator.language || ''
-        var primary = sys.split('-')[0].toLowerCase()
-        function sysLang() {
+        function langFromTag(tag) {
+          var parts = (tag || '').split('-')
+          var primary = (parts[0] || '').toLowerCase()
           if (primary === 'zh') {
-            var region = (sys.split('-')[1] || '').toUpperCase()
+            var region = (parts[1] || '').toUpperCase()
             return region === 'TW' || region === 'HK' || region === 'MO' ? 'zhHant' : 'zh'
           }
-          if (primary === 'en') return 'en'
-          if (primary === 'fr') return 'fr'
-          if (primary === 'de') return 'de'
-          if (primary === 'it') return 'it'
-          if (primary === 'ko') return 'ko'
-          if (primary === 'ja') return 'ja'
-          if (primary === 'vi') return 'vi'
-          if (primary === 'pt') return 'pt'
-          if (primary === 'ar') return 'ar'
+          for (var k in LANG_TAGS) if (LANG_TAGS[k].split('-')[0] === primary) return k
           return 'en'
         }
-        var lang = mode === 'system' ? sysLang() : mode
-        var attr = LANG_ATTR[lang] || 'en'
+        var lang = mode === 'system' ? langFromTag(navigator.language) : mode
+        var attr = LANG_TAGS[lang] || 'en'
         document.documentElement.lang = attr
         document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr'
-        document.title = TITLE[attr] || 'Jotter · JS / TS'
+        document.title = TITLES[attr] || 'Jotter · JS / TS'
       })()
     </script>
-    <script type="module" crossorigin src="./assets/index-By0bMfcF.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-B7Ii6egf.css">
+    <script type="module" crossorigin src="./assets/index-BG9Uyfw-.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CDglGIvW.css">
   </head>
   <body>
     <div id="root"></div>
