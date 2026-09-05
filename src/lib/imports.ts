@@ -1,66 +1,89 @@
 /*
-  检测顶层 import 语句。
+  找出代码里的模块 specifier（import / export … from / 动态 import('…') 引号里的那串）。
 
-  为什么需要它：runner 是一个不带模块解析的 Web Worker，用户代码最终走 eval
-  （脚本上下文）。export 可以靠 strip-exports 剥掉，import 剥不掉 —— 它要真的去
-  取另一个文件。所以带 import 的代码在这里跑不了，eval 只会抛一句
-  「Cannot use import statement outside a module」，用户根本看不出问题在哪。
-  预先检出来，换成一句说清原因的提示。
+  两个用途：
+  - runner 判断入口要不要按 ES 模块跑（hasModuleSyntax）；
+  - module-graph 解析依赖，并把 specifier 改写成依赖模块的 Blob URL（rewriteSpecifiers）。
 
-  匹配策略和 strip-exports 一致：按行首锚定，接受「模板字符串里独占一行、
-  以 import 开头的文本会被误判」这个代价 —— playground 场景下无所谓，
-  而且误判只是多一句提示，不会改动代码。
+  匹配策略：静态 import / export 按行首锚定，接受「模板字符串里独占一行、以 import 开头的
+  文本会被误判」这个代价 —— playground 场景下无所谓。动态 import('…') 不锚定行首，
+  只认字符串字面量参数；注释里的 import('x') 会被误认，代价同上。
 
-  刻意只查静态 import：动态 import() 在 worker 里语法上是合法的，
-  相对路径会以 worker 自己的 URL 为基准去请求，失败时浏览器给的网络错误
-  本身就比较直白，不需要额外翻译。
+  纯类型导入（import type ... / import { type A, type B }）不算：TS 编译时会把它们整段擦掉，
+  这里也跟着忽略，免得去解析一个运行时根本不需要的文件。
 */
 
-import { compact, uniq } from 'lodash-es'
+import { compact } from 'lodash-es'
 
-import type { Problem } from './app-error'
+export type SpecifierKind = 'import' | 'export' | 'dynamic'
+
+export interface ModuleSpecifier {
+  spec: string
+  /** specifier 字符串（不含引号）在源码里的起止偏移，供改写用 */
+  start: number
+  end: number
+  kind: SpecifierKind
+}
 
 // import 'mod'  —— 只求副作用，没有绑定
-const SIDE_EFFECT_IMPORT = /^[ \t]*import[ \t]+(['"])([^'"]+)\1[ \t]*;?[ \t]*$/gm
+const SIDE_EFFECT_IMPORT = /^[ \t]*import[ \t]+(['"])([^'"]+)\1[ \t]*;?[ \t]*$/gmd
 
 // import x / * as ns / { a, b } from 'mod'  —— 绑定列表可能跨多行
-const BINDING_IMPORT = /^[ \t]*import[ \t]+([\s\S]*?)[ \t\n]+from[ \t]*(['"])([^'"]+)\2/gm
+const BINDING_IMPORT = /^[ \t]*import[ \t]+([\s\S]*?)[ \t\n]+from[ \t]*(['"])([^'"]+)\2/gmd
 
-/**
- * 返回代码里所有静态 import 的模块名（去重，保持出现顺序）。
- * 纯类型导入（import type ...）不算：TS 编译时会把它们整段擦掉。
- */
-export function findStaticImports(code: string): string[] {
-  const specs: string[] = []
+// export * from 'mod' / export * as ns from 'mod' / export { a, b as c } from 'mod'
+const EXPORT_FROM = /^[ \t]*export[ \t]+(?:\*(?:[ \t]+as[ \t]+[$\w]+)?|\{[\s\S]*?\})[ \t]*from[ \t]*(['"])([^'"]+)\1/gmd
 
-  for (const m of code.matchAll(SIDE_EFFECT_IMPORT)) {
-    specs.push(m[2])
+// import('mod')  —— 只认字符串字面量
+const DYNAMIC_IMPORT = /\bimport[ \t]*\([ \t]*(['"])([^'"]+)\1[ \t]*\)/gd
+
+function isTypeOnlyClause(clause: string): boolean {
+  const c = clause.trim()
+  // import type { Foo } from './x'
+  if (/^type\b/.test(c)) return true
+  // import { type A, type B } from './x' —— 全部是内联类型标记。只要有一个不带 type 就算真导入
+  if (c.startsWith('{') && c.endsWith('}')) {
+    const names = compact(c.slice(1, -1).split(',').map((s) => s.trim()))
+    return names.length > 0 && names.every((n) => /^type\b/.test(n))
+  }
+  return false
+}
+
+/** 按出现位置排序的全部 specifier（同一个模块被导入多次会出现多次，改写时需要每一处） */
+export function findModuleSpecifiers(code: string): ModuleSpecifier[] {
+  const out: ModuleSpecifier[] = []
+  const push = (m: RegExpMatchArray, group: number, kind: SpecifierKind) => {
+    const range = m.indices?.[group]
+    if (!range) return
+    out.push({ spec: m[group], start: range[0], end: range[1], kind })
   }
 
+  for (const m of code.matchAll(SIDE_EFFECT_IMPORT)) push(m, 2, 'import')
   for (const m of code.matchAll(BINDING_IMPORT)) {
-    const clause = m[1].trim()
-    // import type { Foo } from './x' —— 类型导入，编译后不留痕迹
-    if (/^type\b/.test(clause)) continue
-    // import { type A, type B } from './x' —— 全部是内联类型标记，同样会被擦掉。
-    // 只要有一个不带 type 的绑定就算真导入，宁可多报不可漏报的反面：
-    // 漏报只是退回到原本那句难懂的 SyntaxError，误报则会拦下本来能跑的代码。
-    if (clause.startsWith('{') && clause.endsWith('}')) {
-      const names = compact(clause.slice(1, -1).split(',').map((s) => s.trim()))
-      if (names.length > 0 && names.every((n) => /^type\b/.test(n))) continue
-    }
-    specs.push(m[3])
+    if (isTypeOnlyClause(m[1])) continue
+    push(m, 3, 'import')
   }
+  for (const m of code.matchAll(EXPORT_FROM)) push(m, 2, 'export')
+  for (const m of code.matchAll(DYNAMIC_IMPORT)) push(m, 2, 'dynamic')
 
-  // uniq 保留首次出现的顺序，正好是这里要的语义
-  return uniq(specs)
+  return out.sort((a, b) => a.start - b.start)
+}
+
+/** 入口要不要按 ES 模块执行：有任何一处需要解析的 specifier 就要 */
+export function hasModuleSyntax(code: string): boolean {
+  return findModuleSpecifiers(code).length > 0
 }
 
 /**
- * 「代码里有 import，跑不了」这条提示的描述符。
- *
- * 引号、顿号这些拼接细节都在字典里 —— 中文用「“…”、」，英文用 `"…", `，
- * 它们是随语言变的标点，不该硬写在这儿。
+ * 把每个 specifier 换成 map(spec) 的结果。从后往前替换，前面的偏移不受影响；
+ * 只动引号里的内容，行号不变（调用栈才对得上编辑器）。
  */
-export function unresolvedImportProblem(specs: string[]): Problem {
-  return { key: 'err.imports.unresolved', params: { specs } }
+export function rewriteSpecifiers(code: string, map: (spec: string) => string): string {
+  const specs = findModuleSpecifiers(code)
+  let out = code
+  for (let i = specs.length - 1; i >= 0; i--) {
+    const s = specs[i]
+    out = out.slice(0, s.start) + map(s.spec) + out.slice(s.end)
+  }
+  return out
 }

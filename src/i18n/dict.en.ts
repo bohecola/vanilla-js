@@ -281,9 +281,20 @@ export const en: Dict = {
       )
       .join('; ')}`,
   'err.compile.raw': (p) => `TypeScript compilation failed: ${p.message}`,
-  'err.imports.unresolved': (p) =>
-    `The code imports ${p.specs.map((s) => `"${s}"`).join(', ')}, and this runtime cannot resolve module imports. ` +
-    `The runner is a Web Worker with no module resolver — inline the dependency into the same file before running.`,
+  'err.imports.bare': (p) =>
+    `${p.from} imports "${p.spec}", which is an npm package. Importing third-party packages is not supported yet; only relative imports of files inside the opened folder work.`,
+  'err.imports.noRoot':
+    'This file is not inside an opened folder (a scratch, a built-in demo or an imported file), so relative imports cannot be resolved. Save it into a folder and run it from there.',
+  'err.imports.notFound': (p) =>
+    `"${p.spec}" imported by ${p.from} was not found. Tried: ${p.tried.join(', ')}.`,
+  'err.imports.outsideRoot': (p) =>
+    `"${p.spec}" imported by ${p.from} points outside the opened folder and cannot be imported.`,
+  'err.imports.unsupportedType': (p) =>
+    `"${p.spec}" imported by ${p.from} is not a runnable JS / TS file. Only .js, .mjs, .ts and .mts are supported.`,
+  'err.imports.cycle': (p) =>
+    `Circular import: ${p.chain.join(' → ')}. This runtime does not support circular dependencies; break one link of the cycle.`,
+  'err.imports.tooMany': (p) =>
+    `More than ${p.limit} files imported, stopped. Check whether a folder like node_modules is being imported.`,
 
   // ---- 工作区 ----
   'err.save.cancelled': 'Save cancelled',

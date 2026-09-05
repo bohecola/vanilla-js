@@ -296,8 +296,20 @@ export const fr: Dict = {
       .join(' ; ')}`,
   'err.compile.raw': (p: { message: string }) =>
     `Échec de la compilation TypeScript : ${p.message}`,
-  'err.imports.unresolved': (p: { specs: string[] }) =>
-    `Le code importe ${p.specs.map((s) => `« ${s} »`).join(', ')}, et cet environnement ne peut pas résoudre les imports de modules. L’exécuteur est un Web Worker sans résolveur de modules — intégrez la dépendance dans le même fichier avant d’exécuter.`,
+  'err.imports.bare': (p) =>
+    `${p.from} importe « ${p.spec} », qui est un paquet npm. L'import de paquets tiers n'est pas encore pris en charge ; seuls les imports relatifs de fichiers du dossier ouvert fonctionnent.`,
+  'err.imports.noRoot':
+    "Ce fichier n'est pas dans un dossier ouvert (brouillon, démo intégrée ou fichier importé) : les imports relatifs ne peuvent pas être résolus. Enregistrez-le dans un dossier puis exécutez-le.",
+  'err.imports.notFound': (p) =>
+    `« ${p.spec} » importé par ${p.from} est introuvable. Essayé : ${p.tried.join(', ')}.`,
+  'err.imports.outsideRoot': (p) =>
+    `« ${p.spec} » importé par ${p.from} sort du dossier ouvert et ne peut pas être importé.`,
+  'err.imports.unsupportedType': (p) =>
+    `« ${p.spec} » importé par ${p.from} n'est pas un fichier JS / TS exécutable. Seuls .js, .mjs, .ts et .mts sont pris en charge.`,
+  'err.imports.cycle': (p) =>
+    `Import circulaire : ${p.chain.join(' → ')}. Cet environnement ne gère pas les dépendances circulaires ; cassez un maillon du cycle.`,
+  'err.imports.tooMany': (p) =>
+    `Plus de ${p.limit} fichiers importés, arrêt. Vérifiez qu'un dossier comme node_modules n'est pas importé.`,
 
   // ---- Espace de travail ----
   'err.save.cancelled': 'Enregistrement annulé',

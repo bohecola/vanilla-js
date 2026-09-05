@@ -272,8 +272,20 @@ export const ja: Dict = {
       .join('；')}`,
   'err.compile.raw': (p: { message: string }) =>
     `TypeScript のコンパイルに失敗しました: ${p.message}`,
-  'err.imports.unresolved': (p: { specs: string[] }) =>
-    `コードは ${p.specs.map((s) => `「${s}」`).join('、')} を import していますが、この実行環境はモジュール import を解決できません。実行機能はモジュール解決のない Web Worker のため、実行前に依存を同じファイルに取り込んでください。`,
+  'err.imports.bare': (p) =>
+    `${p.from} が npm パッケージ「${p.spec}」をインポートしています。サードパーティパッケージのインポートは未対応で、開いているフォルダー内ファイルの相対パスインポートのみ使えます。`,
+  'err.imports.noRoot':
+    'このファイルは開いているフォルダーの中にありません（スクラッチ、組み込みデモ、またはインポートしたファイル）。相対パスのインポートを解決できないので、フォルダーに保存してから実行してください。',
+  'err.imports.notFound': (p) =>
+    `${p.from} がインポートした「${p.spec}」が見つかりません。試したパス: ${p.tried.join(', ')}。`,
+  'err.imports.outsideRoot': (p) =>
+    `${p.from} がインポートした「${p.spec}」は開いているフォルダーの外を指しているためインポートできません。`,
+  'err.imports.unsupportedType': (p) =>
+    `${p.from} がインポートした「${p.spec}」は実行可能な JS / TS ファイルではありません。対応しているのは .js、.mjs、.ts、.mts のみです。`,
+  'err.imports.cycle': (p) =>
+    `循環インポートがあります: ${p.chain.join(' → ')}。このランタイムは循環依存に対応していません。どこか一箇所を断ち切ってください。`,
+  'err.imports.tooMany': (p) =>
+    `インポートしたファイルが ${p.limit} 個を超えたため停止しました。node_modules のようなフォルダーをインポートしていないか確認してください。`,
 
   'err.save.cancelled': '保存はキャンセルされました',
   'err.ws.rootMoved': (p: { name: string }) =>

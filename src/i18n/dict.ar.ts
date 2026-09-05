@@ -269,8 +269,20 @@ export const ar: Dict = {
       .map((i) => `${i.text || 'خطأ غير معروف'}${i.loc ? ` (سطر ${i.loc.line}، عمود ${i.loc.column})` : ''}`)
       .join('؛ ')}`,
   'err.compile.raw': (p: { message: string }) => `فشل ترجمة TypeScript: ${p.message}`,
-  'err.imports.unresolved': (p: { specs: string[] }) =>
-    `يستورد الكود ${p.specs.map((s) => `« ${s} »`).join('، ')}، ولا تستطيع هذه البيئة حلّ استيراد الوحدات. المشغّل Web Worker دون محلل وحدات — أدمج الاعتماد في الملف نفسه قبل التشغيل.`,
+  'err.imports.bare': (p) =>
+    `${p.from} يستورد "${p.spec}" وهي حزمة npm. استيراد حزم الطرف الثالث غير مدعوم بعد؛ يعمل فقط الاستيراد بمسار نسبي لملفات داخل المجلد المفتوح.`,
+  'err.imports.noRoot':
+    'هذا الملف ليس داخل مجلد مفتوح (مسودة أو عرض مدمج أو ملف مستورد)، لذا لا يمكن حل الاستيراد النسبي. احفظه في مجلد ثم شغّله.',
+  'err.imports.notFound': (p) =>
+    `لم يُعثر على "${p.spec}" الذي يستورده ${p.from}. تمت المحاولة: ${p.tried.join('، ')}.`,
+  'err.imports.outsideRoot': (p) =>
+    `"${p.spec}" الذي يستورده ${p.from} يشير إلى خارج المجلد المفتوح ولا يمكن استيراده.`,
+  'err.imports.unsupportedType': (p) =>
+    `"${p.spec}" الذي يستورده ${p.from} ليس ملف JS / TS قابلًا للتشغيل. المدعوم فقط: .js و .mjs و .ts و .mts.`,
+  'err.imports.cycle': (p) =>
+    `استيراد دائري: ${p.chain.join(' → ')}. بيئة التشغيل هذه لا تدعم الاعتماديات الدائرية؛ اكسر إحدى حلقات الدورة.`,
+  'err.imports.tooMany': (p) =>
+    `تم استيراد أكثر من ${p.limit} ملفًا، فتوقف التشغيل. تحقق مما إذا كان يتم استيراد مجلد مثل node_modules.`,
 
   'err.save.cancelled': 'أُلغي الحفظ',
   'err.ws.rootMoved': (p: { name: string }) =>

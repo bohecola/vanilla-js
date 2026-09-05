@@ -296,9 +296,20 @@ export const zh = {
       )
       .join('；')}`,
   'err.compile.raw': (p: { message: string }) => `TypeScript 编译失败：${p.message}`,
-  'err.imports.unresolved': (p: { specs: string[] }) =>
-    `代码里有 import ${p.specs.map((s) => `“${s}”`).join('、')}，当前运行环境无法解析模块导入。` +
-    `运行器是一个不带模块解析的 Web Worker，请把依赖内联到同一个文件里再运行。`,
+  'err.imports.bare': (p: { spec: string; from: string }) =>
+    `${p.from} 导入了 “${p.spec}”：它是 npm 包，当前还不支持导入第三方包，只支持相对路径导入已打开目录里的文件。`,
+  'err.imports.noRoot':
+    '这个文件不在已打开的目录里（草稿、内置示例或导入的文件），无法解析相对路径导入。把它保存到目录里再运行。',
+  'err.imports.notFound': (p: { spec: string; from: string; tried: string[] }) =>
+    `${p.from} 导入的 “${p.spec}” 找不到，试过：${p.tried.join('、')}。`,
+  'err.imports.outsideRoot': (p: { spec: string; from: string }) =>
+    `${p.from} 导入的 “${p.spec}” 越出了已打开的目录，不能导入。`,
+  'err.imports.unsupportedType': (p: { spec: string; from: string }) =>
+    `${p.from} 导入的 “${p.spec}” 不是可运行的 JS / TS 文件，当前只支持 .js、.mjs、.ts、.mts。`,
+  'err.imports.cycle': (p: { chain: string[] }) =>
+    `存在循环导入：${p.chain.join(' → ')}。当前运行环境不支持循环依赖，请打断其中一环。`,
+  'err.imports.tooMany': (p: { limit: number }) =>
+    `导入的文件超过 ${p.limit} 个，已停止。检查是否导入了 node_modules 之类的目录。`,
 
   // ---- 工作区（目录授权、句柄失效） ----
   'err.save.cancelled': '保存已取消',

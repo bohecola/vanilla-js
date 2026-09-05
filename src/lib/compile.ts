@@ -26,18 +26,18 @@ function flattenMessage(text: monaco.typescript.Diagnostic['messageText']): stri
 }
 
 /**
- * 把用户代码编译成可以直接在 eval（脚本上下文）里执行的 JS。
- * - typescript：交给 Monaco 的 TS worker emit（只剥类型，不做类型检查；语法错误会拦下），再剥离 export
- * - javascript：原样返回，只剥离 export（导入的 ES module 文件也能直接跑）
+ * TS → JS，只剥类型、不做类型检查（语法错误会拦下）；JS 原样返回。import / export 原样保留。
  *
  * key 是编辑器里 model 的 key（同 EditorHandle 的 key）。TS 路径需要它找到对应 model：
- * 语言服务按 model 工作，而不是按一段字符串。找不到 model（理论上不会）就临时建一个。
+ * 语言服务按 model 工作，而不是按一段字符串。找不到 model（没在编辑器里打开的依赖文件）就临时建一个。
  */
-export async function compileToJs(code: string, language: string, key?: string): Promise<string> {
-  if (language !== 'typescript') return stripExports(code)
+async function emitJs(code: string, language: string, key?: string): Promise<string> {
+  if (language !== 'typescript') return code
 
   const existing = key ? monaco.editor.getModel(modelUri(key)) : null
-  const model = existing ?? monaco.editor.createModel(code, 'typescript', modelUri(`__compile__${Date.now()}`))
+  const model =
+    existing ??
+    monaco.editor.createModel(code, 'typescript', modelUri(`__compile__${Date.now()}_${Math.random()}`))
   try {
     // 用户可能刚敲完就按了运行：model 里的内容和传进来的 code 应该一致，以传进来的为准
     if (model.getValue() !== code) model.setValue(code)
@@ -49,11 +49,24 @@ export async function compileToJs(code: string, language: string, key?: string):
     const out = await worker.getEmitOutput(uri)
     const js = out.outputFiles.find((f) => f.name.endsWith('.js'))?.text
     if (js === undefined) throw new AppError('err.compile.raw', { message: 'TypeScript emitted no output' })
-    return stripExports(js)
+    return js
   } catch (err) {
     if (err instanceof AppError) throw err
     throw new AppError('err.compile.raw', { message: err instanceof Error ? err.message : String(err) })
   } finally {
     if (!existing) model.dispose()
   }
+}
+
+/**
+ * 脚本模式：编译成可以直接在 eval（脚本上下文）里执行的 JS，顶层 export 会被剥掉。
+ * 入口没有 import 时走这条路（见 docs/module-imports-plan.md 第 3 节）。
+ */
+export async function compileToJs(code: string, language: string, key?: string): Promise<string> {
+  return stripExports(await emitJs(code, language, key))
+}
+
+/** 模块模式：保留 import / export，交给 module-graph 改写 specifier 后以 ESM 执行。 */
+export async function compileModule(code: string, language: string, key?: string): Promise<string> {
+  return emitJs(code, language, key)
 }

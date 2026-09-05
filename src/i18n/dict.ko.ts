@@ -273,8 +273,20 @@ export const ko: Dict = {
       .map((i) => `${i.text || '알 수 없는 오류'}${i.loc ? `(${i.loc.line}행 ${i.loc.column}열)` : ''}`)
       .join('; ')}`,
   'err.compile.raw': (p: { message: string }) => `TypeScript 컴파일 실패: ${p.message}`,
-  'err.imports.unresolved': (p: { specs: string[] }) =>
-    `코드가 ${p.specs.map((s) => `「${s}」`).join(', ')}을(를) import하는데 이 실행 환경은 모듈 import를 풀 수 없습니다. 실행기는 모듈 해석이 없는 Web Worker이므로, 실행 전에 의존 코드를 같은 파일에 넣으세요.`,
+  'err.imports.bare': (p) =>
+    `${p.from}이(가) npm 패키지인 "${p.spec}"을(를) 가져옵니다. 서드파티 패키지 가져오기는 아직 지원되지 않으며, 열린 폴더 안 파일의 상대 경로 가져오기만 동작합니다.`,
+  'err.imports.noRoot':
+    '이 파일은 열린 폴더 안에 없어(스크래치, 내장 데모 또는 가져온 파일) 상대 경로 가져오기를 해석할 수 없습니다. 폴더에 저장한 뒤 실행하세요.',
+  'err.imports.notFound': (p) =>
+    `${p.from}에서 가져온 "${p.spec}"을(를) 찾을 수 없습니다. 시도한 경로: ${p.tried.join(', ')}.`,
+  'err.imports.outsideRoot': (p) =>
+    `${p.from}에서 가져온 "${p.spec}"은(는) 열린 폴더 바깥을 가리키므로 가져올 수 없습니다.`,
+  'err.imports.unsupportedType': (p) =>
+    `${p.from}에서 가져온 "${p.spec}"은(는) 실행 가능한 JS / TS 파일이 아닙니다. .js, .mjs, .ts, .mts만 지원합니다.`,
+  'err.imports.cycle': (p) =>
+    `순환 가져오기: ${p.chain.join(' → ')}. 이 런타임은 순환 의존성을 지원하지 않습니다. 고리 중 하나를 끊으세요.`,
+  'err.imports.tooMany': (p) =>
+    `${p.limit}개가 넘는 파일을 가져와 중단했습니다. node_modules 같은 폴더를 가져오고 있지 않은지 확인하세요.`,
 
   'err.save.cancelled': '저장이 취소되었습니다',
   'err.ws.rootMoved': (p: { name: string }) =>

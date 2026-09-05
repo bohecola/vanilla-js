@@ -288,9 +288,17 @@ export const zhHant: Dict = {
       )
       .join('；')}`,
   'err.compile.raw': (p: { message: string }) => `TypeScript 編譯失敗：${p.message}`,
-  'err.imports.unresolved': (p: { specs: string[] }) =>
-    `程式裡有 import ${p.specs.map((s) => `「${s}」`).join('、')}，目前執行環境無法解析模組匯入。` +
-    `執行器是一個不帶模組解析的 Web Worker，請把相依內聯到同一個檔案裡再執行。`,
+  'err.imports.bare': (p) =>
+    `${p.from} 匯入了「${p.spec}」：它是 npm 套件，目前還不支援匯入第三方套件，只支援以相對路徑匯入已開啟目錄裡的檔案。`,
+  'err.imports.noRoot':
+    '這個檔案不在已開啟的目錄裡（草稿、內建範例或匯入的檔案），無法解析相對路徑匯入。把它儲存到目錄裡再執行。',
+  'err.imports.notFound': (p) => `${p.from} 匯入的「${p.spec}」找不到，試過：${p.tried.join('、')}。`,
+  'err.imports.outsideRoot': (p) => `${p.from} 匯入的「${p.spec}」超出了已開啟的目錄，不能匯入。`,
+  'err.imports.unsupportedType': (p) =>
+    `${p.from} 匯入的「${p.spec}」不是可執行的 JS / TS 檔案，目前只支援 .js、.mjs、.ts、.mts。`,
+  'err.imports.cycle': (p) =>
+    `存在循環匯入：${p.chain.join(' → ')}。目前的執行環境不支援循環相依，請打斷其中一環。`,
+  'err.imports.tooMany': (p) => `匯入的檔案超過 ${p.limit} 個，已停止。檢查是否匯入了 node_modules 之類的目錄。`,
 
   // ---- 工作區 ----
   'err.save.cancelled': '儲存已取消',

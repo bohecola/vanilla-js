@@ -33,12 +33,25 @@ function cleanStack(stack: string | undefined): string[] {
     const line = raw.trim()
     if (!line.startsWith('at ')) continue
     const m = /^at (?:(.+?) \()?.*<anonymous>:(\d+):(\d+)\)?$/.exec(line)
-    if (!m) continue
-    const fn = m[1] && m[1] !== 'eval' ? m[1] : '<anonymous>'
-    frames.push(`at ${fn} (line ${m[2]}:${m[3]})`)
+    if (m) {
+      const fn = m[1] && m[1] !== 'eval' ? m[1] : '<anonymous>'
+      frames.push(`at ${fn} (line ${m[2]}:${m[3]})`)
+      continue
+    }
+    // 模块模式：帧长这样 `at add (blob:http://…/uuid:3:9)`，顶层代码没有函数名和括号。
+    // 用主线程发来的映射表把 blob URL 换回文件名；映射表里没有的是浏览器 / Monaco 内部的帧，丢掉
+    const b = /^at (?:(.+?) \()?(blob:[^\s)]+?):(\d+):(\d+)\)?$/.exec(line)
+    if (b) {
+      const name = moduleNames[b[2]]
+      if (!name) continue
+      frames.push(`at ${b[1] ?? '<module>'} (${name}:${b[3]}:${b[4]})`)
+    }
   }
   return frames
 }
+
+/** 模块模式下 Blob URL → 文件显示名（随 run 消息发来），给 cleanStack 用 */
+let moduleNames: Record<string, string> = {}
 
 function constructorName(value: object): string | null {
   const proto = Object.getPrototypeOf(value)
@@ -241,10 +254,17 @@ type AnyFn = (...args: unknown[]) => unknown
 const rawConsole = console as unknown as Record<string, AnyFn | undefined>
 
 /** 用 patched 替换 console[name]，并在 patched 之后调用原实现。原实现不存在时也照样装上。 */
+// 开发模式下 Vite 会把它的 HMR 客户端注入 module worker，客户端连上后会 console.debug 一句
+// 「[vite] connected.」，被下面的劫持转发到面板里就成了一条莫名其妙的 DBG。
+// 按调用栈里有没有 @vite/client 过滤，只影响 dev；生产构建里没有这个客户端
+function fromViteClient(): boolean {
+  return import.meta.env.DEV && (new Error().stack ?? '').includes('@vite/client')
+}
+
 function patch(name: string, patched: AnyFn) {
   const origin = rawConsole[name]
   rawConsole[name] = (...args: unknown[]) => {
-    patched(...args)
+    if (!fromViteClient()) patched(...args)
     if (typeof origin === 'function') return origin.apply(console, args)
   }
 }
@@ -338,8 +358,9 @@ const origClearTimeout = workerScope.clearTimeout.bind(workerScope)
 const origClearInterval = workerScope.clearInterval.bind(workerScope)
 
 workerScope.setTimeout = ((fn: TimerFn, delay?: number, ...args: unknown[]) => {
-  // 字符串形式的回调不常见，直接交给原生实现，不纳入统计
-  if (typeof fn !== 'function') return origSetTimeout(fn as never, delay)
+  // 字符串形式的回调不常见，直接交给原生实现，不纳入统计。
+  // Vite 开发客户端（HMR 心跳）排的定时器也不算：否则它一直挂着，done 永远发不出去
+  if (typeof fn !== 'function' || fromViteClient()) return origSetTimeout(fn as never, delay, ...args)
   let id = 0
   id = origSetTimeout(
     (...cbArgs: unknown[]) => {
@@ -359,7 +380,7 @@ workerScope.setTimeout = ((fn: TimerFn, delay?: number, ...args: unknown[]) => {
 }) as typeof setTimeout
 
 workerScope.setInterval = ((fn: TimerFn, delay?: number, ...args: unknown[]) => {
-  if (typeof fn !== 'function') return origSetInterval(fn as never, delay)
+  if (typeof fn !== 'function' || fromViteClient()) return origSetInterval(fn as never, delay, ...args)
   const id = origSetInterval(fn, delay, ...args)
   activeIntervals.add(id)
   return id
@@ -395,7 +416,9 @@ workerScope.addEventListener('unhandledrejection', (ev: PromiseRejectionEvent) =
 // - 还有 setInterval / 未触发的 setTimeout：等它们真正结束后才发 done。
 // - while(true) 死循环：fn() 永不返回，不发 done，「停止」保持可点（terminate 兜底）。
 workerScope.onmessage = (e: MessageEvent) => {
-  const code = typeof e.data?.code === 'string' ? e.data.code : ''
+  const data = e.data ?? {}
+  const code = typeof data.code === 'string' ? data.code : ''
+  moduleNames = data.mode === 'module' && data.names ? data.names : {}
   pendingTimeouts.clear()
   activeIntervals.clear()
   bodySettled = false
@@ -406,8 +429,15 @@ workerScope.onmessage = (e: MessageEvent) => {
 
   let body: Promise<unknown>
   try {
-    const fn = (0, eval)('(async () => {' + code + '\n})') as () => Promise<unknown>
-    body = fn()
+    if (data.mode === 'module') {
+      // 模块模式：入口是主线程建好的 Blob URL（依赖的 specifier 已改写成各自的 URL），
+      // 用真正的 import() 执行，import / export / 顶层 await 都是原生语义。
+      // 语法错误会让 import() reject，走下面同一条错误通道
+      body = import(/* @vite-ignore */ String(data.entry))
+    } else {
+      const fn = (0, eval)('(async () => {' + code + '\n})') as () => Promise<unknown>
+      body = fn()
+    }
   } catch (err) {
     sendSafe('error', [err])
     bodySettled = true

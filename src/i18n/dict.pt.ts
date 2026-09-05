@@ -276,8 +276,20 @@ export const pt: Dict = {
       .join('; ')}`,
   'err.compile.raw': (p: { message: string }) =>
     `Falha ao compilar TypeScript: ${p.message}`,
-  'err.imports.unresolved': (p: { specs: string[] }) =>
-    `O código importa ${p.specs.map((s) => `« ${s} »`).join(', ')}, e este ambiente não resolve imports de módulos. O executor é um Web Worker sem resolução de módulos — incorpore a dependência no mesmo arquivo antes de executar.`,
+  'err.imports.bare': (p) =>
+    `${p.from} importa "${p.spec}", que é um pacote npm. Importar pacotes de terceiros ainda não é suportado; só funcionam imports relativos de arquivos na pasta aberta.`,
+  'err.imports.noRoot':
+    'Este arquivo não está em uma pasta aberta (rascunho, demo integrado ou arquivo importado), então imports relativos não podem ser resolvidos. Salve-o em uma pasta e execute a partir dela.',
+  'err.imports.notFound': (p) =>
+    `"${p.spec}" importado por ${p.from} não foi encontrado. Tentativas: ${p.tried.join(', ')}.`,
+  'err.imports.outsideRoot': (p) =>
+    `"${p.spec}" importado por ${p.from} aponta para fora da pasta aberta e não pode ser importado.`,
+  'err.imports.unsupportedType': (p) =>
+    `"${p.spec}" importado por ${p.from} não é um arquivo JS / TS executável. Só .js, .mjs, .ts e .mts são suportados.`,
+  'err.imports.cycle': (p) =>
+    `Import circular: ${p.chain.join(' → ')}. Este runtime não suporta dependências circulares; quebre um elo do ciclo.`,
+  'err.imports.tooMany': (p) =>
+    `Mais de ${p.limit} arquivos importados, interrompido. Verifique se uma pasta como node_modules está sendo importada.`,
 
   'err.save.cancelled': 'Salvamento cancelado',
   'err.ws.rootMoved': (p: { name: string }) =>

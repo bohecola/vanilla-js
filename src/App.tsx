@@ -30,6 +30,7 @@ import {
   type FileEntry,
 } from './lib/fs-access'
 import { codeRunner } from './lib/runner'
+import type { ModuleHost } from './lib/module-graph'
 import { startPointerDrag } from './lib/pointer-drag'
 import { shortcut, isRtl } from './lib/platform'
 import { useMediaQuery } from './hooks/useMediaQuery'
@@ -628,8 +629,35 @@ function App() {
   function runCode() {
     if (!active || !runnable) return
     consoleRef.current?.clear()
-    void codeRunner.run(editorRef.current?.getValue(active.key) ?? '', language, active.key)
+    void codeRunner.run(
+      editorRef.current?.getValue(active.key) ?? '',
+      language,
+      active.key,
+      moduleHost(active)
+    )
     setRunning(true)
+  }
+
+  // 跨文件 import 需要的能力（见 lib/module-graph.ts 的 ModuleHost）：只有本地目录里的文件
+  // 才有「所在目录」可以解析相对路径；草稿 / 内置示例 / 导入的文件传 null，runner 会报清楚
+  function moduleHost(file: ActiveFile): ModuleHost | null {
+    if (file.kind !== 'local') return null
+    return {
+      entryPath: file.key.slice('local:'.length),
+      exists: async (path) => (await workspace.resolveFilePath(path)) !== null,
+      readSource: async (path) => {
+        const name = path.slice(path.lastIndexOf('/') + 1)
+        const lang = languageOf(name) ?? 'javascript'
+        // 已在编辑器里打开的文件用缓冲区（未保存的改动也算），和用户眼前看到的一致
+        const key = `local:${path}`
+        const ed = editorRef.current
+        if (ed?.has(key)) return { code: ed.getValue(key), language: lang }
+        const handle = await workspace.resolveFilePath(path)
+        if (!handle) return null
+        return { code: (await readTextFile(handle)).text, language: lang }
+      },
+      displayName: (path) => displayPath(path),
+    }
   }
 
   // 停止：terminate worker，立即终止运行（包括 while(true) 死循环）

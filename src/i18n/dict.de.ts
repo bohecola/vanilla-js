@@ -283,8 +283,20 @@ export const de: Dict = {
       .join(' ; ')}`,
   'err.compile.raw': (p: { message: string }) =>
     `TypeScript-Kompilierung fehlgeschlagen: ${p.message}`,
-  'err.imports.unresolved': (p: { specs: string[] }) =>
-    `Der Code importiert ${p.specs.map((s) => `„${s}“`).join(', ')}, und dieser Lauf kann Modulimporte nicht auflösen. Der Ausführer ist ein Web Worker ohne Modul-Auflösung — betten Sie die Abhängigkeit in dieselbe Datei ein, bevor Sie ausführen.`,
+  'err.imports.bare': (p) =>
+    `${p.from} importiert „${p.spec}“, ein npm-Paket. Der Import von Drittanbieter-Paketen wird noch nicht unterstützt; nur relative Imports von Dateien im geöffneten Ordner funktionieren.`,
+  'err.imports.noRoot':
+    'Diese Datei liegt in keinem geöffneten Ordner (Entwurf, integriertes Demo oder importierte Datei), daher lassen sich relative Imports nicht auflösen. Speichern Sie sie in einen Ordner und führen Sie sie von dort aus.',
+  'err.imports.notFound': (p) =>
+    `„${p.spec}“, importiert von ${p.from}, wurde nicht gefunden. Versucht: ${p.tried.join(', ')}.`,
+  'err.imports.outsideRoot': (p) =>
+    `„${p.spec}“, importiert von ${p.from}, liegt außerhalb des geöffneten Ordners und kann nicht importiert werden.`,
+  'err.imports.unsupportedType': (p) =>
+    `„${p.spec}“, importiert von ${p.from}, ist keine ausführbare JS-/TS-Datei. Unterstützt werden nur .js, .mjs, .ts und .mts.`,
+  'err.imports.cycle': (p) =>
+    `Zirkulärer Import: ${p.chain.join(' → ')}. Diese Laufzeit unterstützt keine zirkulären Abhängigkeiten; unterbrechen Sie ein Glied des Kreises.`,
+  'err.imports.tooMany': (p) =>
+    `Mehr als ${p.limit} Dateien importiert, abgebrochen. Prüfen Sie, ob ein Ordner wie node_modules importiert wird.`,
 
   'err.save.cancelled': 'Speichern abgebrochen',
   'err.ws.rootMoved': (p: { name: string }) =>

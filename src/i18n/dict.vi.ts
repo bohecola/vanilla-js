@@ -269,8 +269,20 @@ export const vi: Dict = {
       .join('; ')}`,
   'err.compile.raw': (p: { message: string }) =>
     `Biên dịch TypeScript thất bại: ${p.message}`,
-  'err.imports.unresolved': (p: { specs: string[] }) =>
-    `Mã nguồn import ${p.specs.map((s) => `« ${s} »`).join(', ')}, nhưng môi trường này không phân giải được import mô-đun. Trình chạy là một Web Worker không có bộ phân giải mô-đun — hãy nhúng phần phụ thuộc vào cùng một tệp rồi chạy.`,
+  'err.imports.bare': (p) =>
+    `${p.from} nhập "${p.spec}", đây là gói npm. Chưa hỗ trợ nhập gói bên thứ ba; chỉ hỗ trợ nhập theo đường dẫn tương đối các tệp trong thư mục đã mở.`,
+  'err.imports.noRoot':
+    'Tệp này không nằm trong thư mục đã mở (bản nháp, demo tích hợp hoặc tệp đã nhập) nên không thể phân giải import tương đối. Hãy lưu vào một thư mục rồi chạy.',
+  'err.imports.notFound': (p) =>
+    `Không tìm thấy "${p.spec}" do ${p.from} nhập. Đã thử: ${p.tried.join(', ')}.`,
+  'err.imports.outsideRoot': (p) =>
+    `"${p.spec}" do ${p.from} nhập nằm ngoài thư mục đã mở nên không thể nhập.`,
+  'err.imports.unsupportedType': (p) =>
+    `"${p.spec}" do ${p.from} nhập không phải tệp JS / TS chạy được. Chỉ hỗ trợ .js, .mjs, .ts và .mts.`,
+  'err.imports.cycle': (p) =>
+    `Import vòng: ${p.chain.join(' → ')}. Môi trường này không hỗ trợ phụ thuộc vòng; hãy cắt một mắt xích.`,
+  'err.imports.tooMany': (p) =>
+    `Đã nhập quá ${p.limit} tệp, dừng lại. Kiểm tra xem có đang nhập thư mục như node_modules không.`,
 
   'err.save.cancelled': 'Đã hủy lưu',
   'err.ws.rootMoved': (p: { name: string }) =>

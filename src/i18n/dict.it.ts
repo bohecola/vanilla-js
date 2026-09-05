@@ -284,8 +284,20 @@ export const it: Dict = {
       .join('; ')}`,
   'err.compile.raw': (p: { message: string }) =>
     `Compilazione TypeScript fallita: ${p.message}`,
-  'err.imports.unresolved': (p: { specs: string[] }) =>
-    `Il codice importa ${p.specs.map((s) => `« ${s} »`).join(', ')}, e questo ambiente non risolve gli import di moduli. L'esecutore è un Web Worker senza risolutore di moduli — incorpora la dipendenza nello stesso file prima di eseguire.`,
+  'err.imports.bare': (p) =>
+    `${p.from} importa "${p.spec}", che è un pacchetto npm. L'import di pacchetti di terze parti non è ancora supportato; funzionano solo gli import relativi di file nella cartella aperta.`,
+  'err.imports.noRoot':
+    'Questo file non si trova in una cartella aperta (bozza, demo integrata o file importato), quindi gli import relativi non possono essere risolti. Salvalo in una cartella ed eseguilo da lì.',
+  'err.imports.notFound': (p) =>
+    `"${p.spec}" importato da ${p.from} non è stato trovato. Tentativi: ${p.tried.join(', ')}.`,
+  'err.imports.outsideRoot': (p) =>
+    `"${p.spec}" importato da ${p.from} punta fuori dalla cartella aperta e non può essere importato.`,
+  'err.imports.unsupportedType': (p) =>
+    `"${p.spec}" importato da ${p.from} non è un file JS / TS eseguibile. Sono supportati solo .js, .mjs, .ts e .mts.`,
+  'err.imports.cycle': (p) =>
+    `Import circolare: ${p.chain.join(' → ')}. Questo runtime non supporta le dipendenze circolari; interrompi un anello del ciclo.`,
+  'err.imports.tooMany': (p) =>
+    `Importati più di ${p.limit} file, interrotto. Controlla se viene importata una cartella come node_modules.`,
 
   'err.save.cancelled': 'Salvataggio annullato',
   'err.ws.rootMoved': (p: { name: string }) =>

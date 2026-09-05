@@ -9,8 +9,9 @@
 
 import RunnerWorker from './runner.worker?worker'
 import { compileToJs } from './compile'
-import { findStaticImports, unresolvedImportProblem } from './imports'
-import { messageOf, translate, type T } from '@/i18n/context'
+import { hasModuleSyntax } from './imports'
+import { buildModuleGraph, type ModuleHost } from './module-graph'
+import { messageOf, type T } from '@/i18n/context'
 import type { LogLevel } from '@/types'
 
 /** worker 发出的一条 console 输出（还没分配 id，id 由 Console 面板在入列时给） */
@@ -31,6 +32,8 @@ export class CodeRunner {
   // 运行序号：编译是异步的，期间用户可能又点了运行或停止，
   // 靠它判断 await 回来的这次编译结果是否还有效
   private runId = 0
+  /** 模块模式下这次运行创建的 Blob URL，运行结束或停止时 revoke */
+  private blobUrls: string[] = []
 
   /*
     「取当前 t」的 getter。runner 是模块级单例（codeRunner），而 t 是 React 的东西，
@@ -68,38 +71,60 @@ export class CodeRunner {
     for (const listener of this.listeners) listener(batch, dropped)
   }
 
-  /** 创建并启动一次运行。重复调用会先终止上一次。key 是编辑器里 model 的 key（TS 编译要用）。 */
-  async run(code: string, language: string = 'javascript', key?: string): Promise<void> {
+  /**
+   * 创建并启动一次运行。重复调用会先终止上一次。key 是编辑器里 model 的 key（TS 编译要用）。
+   * host：入口是本地目录里的文件时由 App 提供，用于解析相对 import；其余传 null。
+   * 入口有 import / export … from / import() 时按 ES 模块执行（见 docs/module-imports-plan.md），
+   * 否则走原来的脚本模式，行为不变。
+   */
+  async run(
+    code: string,
+    language: string = 'javascript',
+    key?: string,
+    host: ModuleHost | null = null
+  ): Promise<void> {
     this.stop() // 先停掉上一次，避免并行 worker 堆积
     const runId = ++this.runId
-
-    // 先拦 import：worker 里的 eval 是脚本上下文，没有模块解析。
-    // 让它自己撞上去只会得到一句「Cannot use import statement outside a module」，
-    // 说不清是环境限制还是代码写错了。
-    const imports = findStaticImports(code)
-    if (imports.length > 0) {
-      const t = this.translator?.()
-      const problem = unresolvedImportProblem(imports)
-      this.emitError(t ? translate(problem, t) : problem.key)
-      // 这条分支是整个 run() 里唯一同步就结束的：调用方紧接着还要 setRunning(true)，
-      // 同步回调会被它盖掉。推到微任务里，「停止」按钮才不会一直亮着。
+    const t = this.translator?.()
+    const fail = async (message: string) => {
+      this.emitError(message)
+      // 这条分支可能同步就结束：调用方紧接着还要 setRunning(true)，同步回调会被它盖掉。
+      // 推到微任务里，「停止」按钮才不会一直亮着。
       await Promise.resolve()
       this.onDone?.()
-      return
     }
+    const describe = (err: unknown) =>
+      t ? messageOf(err, t) : err instanceof Error ? err.message : String(err)
 
-    let jsCode: string
-    try {
-      // TS 编译交给 Monaco 常驻的 TS worker（见 compile.ts）
-      jsCode = await compileToJs(code, language, key)
-    } catch (err) {
-      if (runId !== this.runId) return // 编译期间已被停止或重新运行
-      const t = this.translator?.()
-      this.emitError(t ? messageOf(err, t) : err instanceof Error ? err.message : String(err))
-      this.onDone?.()
-      return
+    let payload: { code: string } | { mode: 'module'; entry: string; names: Record<string, string> }
+    if (hasModuleSyntax(code)) {
+      if (!host) {
+        await fail(t ? t('err.imports.noRoot') : 'err.imports.noRoot')
+        return
+      }
+      try {
+        const graph = await buildModuleGraph(code, language, host)
+        if (runId !== this.runId) {
+          for (const url of graph.urls) URL.revokeObjectURL(url)
+          return
+        }
+        this.blobUrls = graph.urls
+        payload = { mode: 'module', entry: graph.entryUrl, names: graph.names }
+      } catch (err) {
+        if (runId !== this.runId) return // 建图期间已被停止或重新运行
+        await fail(describe(err))
+        return
+      }
+    } else {
+      try {
+        payload = { code: await compileToJs(code, language, key) }
+      } catch (err) {
+        if (runId !== this.runId) return // 编译期间已被停止或重新运行
+        await fail(describe(err))
+        return
+      }
+      if (runId !== this.runId) return // 同上：这次编译结果已作废
     }
-    if (runId !== this.runId) return // 同上：这次编译结果已作废
 
     const worker = new RunnerWorker()
     this.worker = worker
@@ -108,6 +133,7 @@ export class CodeRunner {
       const data = e.data
       if (data?.from !== 'worker') return
       if (data.type === 'done') {
+        this.revokeBlobs()
         this.onDone?.()
         return
       }
@@ -116,7 +142,7 @@ export class CodeRunner {
       }
     })
 
-    worker.postMessage({ code: jsCode })
+    worker.postMessage(payload)
   }
 
   /** 停止当前运行：强制终止 worker 线程。 */
@@ -126,6 +152,12 @@ export class CodeRunner {
       this.worker.terminate()
       this.worker = null
     }
+    this.revokeBlobs()
+  }
+
+  private revokeBlobs(): void {
+    for (const url of this.blobUrls) URL.revokeObjectURL(url)
+    this.blobUrls = []
   }
 
   /** 释放资源。 */
@@ -136,7 +168,7 @@ export class CodeRunner {
     this.listeners.clear()
   }
 
-  // 往 Console 里写一条错误（编译失败、import 拦截都发生在主线程，没有 worker 可用）。
+  // 往 Console 里写一条错误（编译失败、建模块图失败都发生在主线程，没有 worker 可用）。
   // args 用 worker 序列化 Error 时的同一种标记：Console 才会按错误渲染，
   // 而不是当成一个普通字符串。
   private emitError(message: string): void {
