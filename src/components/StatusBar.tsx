@@ -1,3 +1,4 @@
+import { Icon } from '@/components/ui/icon'
 import { useI18n } from '@/i18n/context'
 import type { CursorStatus } from './Editor'
 import type { ActiveFile } from '@/types'
@@ -8,6 +9,8 @@ interface StatusBarProps {
   language: string
   /** 把 local 路径里的根 id 换成目录名（useWorkspace.displayPath） */
   displayPath: (path: string) => string
+  /** 一次性反馈（已保存 / 已重命名…），由 useNotice 在两秒多后清掉。放状态栏而不是顶部提示条：不占布局，不会推动编辑器 */
+  message?: string | null
 }
 
 /**
@@ -16,7 +19,7 @@ interface StatusBarProps {
  * （Spaces / Tab Size）、编码（本地文件按 BOM 推断）、换行符（LF / CRLF）和语言
  * （跟随后缀自动判断），同 VS Code 右下角。
  */
-export function StatusBar({ active, cursor, language, displayPath }: StatusBarProps) {
+export function StatusBar({ active, cursor, language, displayPath, message }: StatusBarProps) {
   const { t } = useI18n()
   // 底部状态栏左侧要展示「目录 + 文件名」，像 VS Code 那样一条横排、目录淡色文件名高亮。
   // 只有 local（key=local:<相对根路径>）与 builtin（name 本身就是它相对 demo 根的子路径，
@@ -36,8 +39,8 @@ export function StatusBar({ active, cursor, language, displayPath }: StatusBarPr
         })()
 
   return (
-    <footer className="flex shrink-0 items-baseline gap-3 border-t border-[var(--border)] bg-[var(--panel-bg)] px-4 py-1 text-[11px] text-[var(--text-faint)]">
-      <span className="flex min-w-0 flex-1 items-baseline">
+    <footer className="flex h-[26px] shrink-0 items-center gap-3 border-t border-[var(--border)] bg-[var(--panel-bg)] px-4 py-1 text-[11px] text-[var(--text-faint)]">
+      <span className="flex min-w-0 flex-1 items-center">
         {footerLoc ? (
           <>
             {footerLoc.dir ? (
@@ -52,6 +55,16 @@ export function StatusBar({ active, cursor, language, displayPath }: StatusBarPr
           </>
         ) : (
           <span className="truncate">{t('statusbar.noFile')}</span>
+        )}
+        {message && (
+          <span
+            role="status"
+            aria-live="polite"
+            className="ms-3 flex shrink-0 items-center gap-1 text-[var(--text-muted)]"
+          >
+            <Icon className="icon-[lucide--check] size-3" />
+            {message}
+          </span>
         )}
       </span>
       {active && cursor?.position && (
@@ -74,9 +87,9 @@ export function StatusBar({ active, cursor, language, displayPath }: StatusBarPr
           <span className="shrink-0" title={active.encoding}>
             {active.encoding}
           </span>
-          <span aria-hidden className="h-3 w-px shrink-0 bg-[var(--border)]" />
+          <span aria-hidden className="h-2.5 w-px shrink-0 bg-[var(--border)]" />
           <span className="shrink-0">{cursor?.eol ?? 'LF'}</span>
-          <span aria-hidden className="h-3 w-px shrink-0 bg-[var(--border)]" />
+          <span aria-hidden className="h-2.5 w-px shrink-0 bg-[var(--border)]" />
           <span
             className="shrink-0"
             title={

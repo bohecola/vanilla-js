@@ -643,6 +643,7 @@ function App() {
       {/* 顶部工具栏 */}
       <HeaderBar showImport={!workspace.supported} onImport={handleImport} />
 
+      {/* warn / error 的右下角浮层通知；info 类反馈显示在底部状态栏 */}
       <NoticeBar notice={notice} onClose={() => setNotice(null)} />
 
       <div className="flex min-h-0 flex-1">
@@ -824,7 +825,13 @@ function App() {
         </main>
       </div>
 
-      <StatusBar active={active} cursor={cursor} language={language} displayPath={displayPath} />
+      <StatusBar
+        active={active}
+        cursor={cursor}
+        language={language}
+        displayPath={displayPath}
+        message={notice?.tone === 'info' ? notice.text : null}
+      />
 
       {/* 隐藏的文件选择框，用于「导入」按钮读取本地代码文件（那个按钮只在不支持
           目录 API 的浏览器上出现）。
