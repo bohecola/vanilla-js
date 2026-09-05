@@ -178,7 +178,6 @@ export const pt: Dict = {
   'sidebar.savingDemos': (p: { done: number; total: number }) => `Salvando localmente ${p.done}/${p.total}`,
   'sidebar.savingDemosFile': (p: { name: string; done: number; total: number }) =>
     `Gravando ${p.name} (${p.done}/${p.total})`,
-  'sidebar.currentPath': (p: { path: string }) => `Pasta atual: ${p.path}`,
   'sidebar.uncategorized': 'Sem categoria',
 
   'menu.rename': 'Renomear',

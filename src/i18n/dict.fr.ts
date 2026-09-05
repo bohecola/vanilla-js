@@ -190,7 +190,6 @@ export const fr: Dict = {
     `Enregistrement local ${p.done}/${p.total}`,
   'sidebar.savingDemosFile': (p: { name: string; done: number; total: number }) =>
     `Écriture de ${p.name} (${p.done}/${p.total})`,
-  'sidebar.currentPath': (p: { path: string }) => `Dossier actuel : ${p.path}`,
   'sidebar.uncategorized': 'Non classés',
 
   // ---- Menu contextuel / déroulant ----

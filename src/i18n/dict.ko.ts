@@ -177,7 +177,6 @@ export const ko: Dict = {
     `로컬 저장 중 ${p.done}/${p.total}`,
   'sidebar.savingDemosFile': (p: { name: string; done: number; total: number }) =>
     `${p.name} 쓰는 중(${p.done}/${p.total})`,
-  'sidebar.currentPath': (p: { path: string }) => `현재 폴더: ${p.path}`,
   'sidebar.uncategorized': '분류 안 됨',
 
   'menu.rename': '이름 바꾸기',

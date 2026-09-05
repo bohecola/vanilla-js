@@ -177,7 +177,6 @@ export const ja: Dict = {
     `ローカル保存中 ${p.done}/${p.total}`,
   'sidebar.savingDemosFile': (p: { name: string; done: number; total: number }) =>
     `${p.name} を書き込み中（${p.done}/${p.total}）`,
-  'sidebar.currentPath': (p: { path: string }) => `現在のフォルダー: ${p.path}`,
   'sidebar.uncategorized': '未分類',
 
   'menu.rename': '名前を変更',

@@ -1007,7 +1007,9 @@ export default function Sidebar({
     <div
       ref={panelRef}
       style={{ width }}
-      className="relative flex shrink-0 flex-col overflow-hidden bg-[var(--panel-bg)]"
+      // 不裁剪横向溢出：右缘的拖拽把手要跨在面板边界上（一半在面板外），
+      // hover 时的高亮条往外长而不是往里压，才不会盖住选中行的描边
+      className="relative flex shrink-0 flex-col bg-[var(--panel-bg)]"
     >
       <div className="flex items-center justify-between px-3 py-2">
         <span className="text-sm text-[var(--text-muted)]">{t('sidebar.title')}</span>
@@ -1324,24 +1326,11 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* 当前目标目录的可读路径。浏览器拿不到真实绝对路径，只能展示应用内相对路径，
-         但足以让用户知道它在哪个根目录下 */}
-      {workspace.hasRoot && targetLabel && (
-        <div className="flex items-center gap-1 border-t border-[var(--border)] px-2 py-1">
-          <Icon className="icon-[lucide--folder] size-3 shrink-0 text-[var(--text-faint)]" />
-          <span
-            className="truncate text-[11px] text-[var(--text-faint)]"
-            title={t('sidebar.currentPath', { path: targetLabel })}
-          >
-            {targetLabel}
-          </span>
-        </div>
-      )}
-
-      {/* 拖拽把手：命中区 6px 好抓。侧栏朝主区那缘的边界发丝线由这根亮线承担（容器不再画
-          border），贴 end-0（= 逻辑 inline-end）对齐真实边界 —— LTR 在右缘、RTL 在左缘。
-          平时 w-px 发丝线；鼠标放上去（hover）加粗到
-          4px 并亮主色；按住拖动保持 hover 亮度（不再更亮）。 */}
+      {/* 拖拽把手：命中区 6px 好抓，跨在面板边界上（-end-[3px]：一半在面板里、一半在主区里，
+          同 VS Code 的 sash）。侧栏朝主区那缘的发丝线由它承担（容器不再画 border），
+          落在面板最后 1px 上；hover / 拖动时加粗到 4px 并亮主色，但只往主区那侧长，
+          面板内仍只占那 1px —— 选中行的描边紧挨着它，不会被盖住。
+          end-/start- 都是逻辑方向，RTL 自动镜像。 */}
       <div
         role="separator"
         aria-orientation="vertical"
@@ -1359,11 +1348,11 @@ export default function Sidebar({
         onMouseEnter={armResizeHover}
         onMouseLeave={disarmResizeHover}
         title={t('sidebar.resize')}
-        className="absolute inset-y-0 end-0 z-10 w-[6px] cursor-col-resize outline-none focus-visible:bg-[var(--primary)]/30"
+        className="absolute inset-y-0 -end-[3px] z-10 w-[6px] cursor-col-resize outline-none focus-visible:bg-[var(--primary)]/30"
       >
         <span
           className={cn(
-            'absolute inset-y-0 end-0 transition-[width,background-color] duration-100',
+            'absolute inset-y-0 start-[2px] transition-[width,background-color] duration-100',
             dragging || resizeHover
               ? 'w-[4px] bg-[var(--primary)]/70'
               : 'w-px bg-[var(--border)]'

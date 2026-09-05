@@ -174,7 +174,6 @@ export const ar: Dict = {
   'sidebar.savingDemos': (p: { done: number; total: number }) => `حفظ محلي ${p.done}/${p.total}`,
   'sidebar.savingDemosFile': (p: { name: string; done: number; total: number }) =>
     `كتابة ${p.name} (${p.done}/${p.total})`,
-  'sidebar.currentPath': (p: { path: string }) => `المجلد الحالي: ${p.path}`,
   'sidebar.uncategorized': 'غير مصنَّف',
 
   'menu.rename': 'إعادة تسمية',

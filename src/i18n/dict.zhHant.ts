@@ -186,7 +186,6 @@ export const zhHant: Dict = {
     `正在儲存到本機 ${p.done}/${p.total}`,
   'sidebar.savingDemosFile': (p: { name: string; done: number; total: number }) =>
     `正在寫入 ${p.name}（${p.done}/${p.total}）`,
-  'sidebar.currentPath': (p: { path: string }) => `目前目錄：${p.path}`,
   'sidebar.uncategorized': '未分類',
 
   // ---- 右鍵 / 下拉選單 ----

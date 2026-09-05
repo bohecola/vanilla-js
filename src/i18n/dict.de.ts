@@ -182,7 +182,6 @@ export const de: Dict = {
     `Lokales Speichern ${p.done}/${p.total}`,
   'sidebar.savingDemosFile': (p: { name: string; done: number; total: number }) =>
     `Schreibe ${p.name} (${p.done}/${p.total})`,
-  'sidebar.currentPath': (p: { path: string }) => `Aktueller Ordner: ${p.path}`,
   'sidebar.uncategorized': 'Nicht kategorisiert',
 
   'menu.rename': 'Umbenennen',

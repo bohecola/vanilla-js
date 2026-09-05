@@ -183,7 +183,6 @@ export const it: Dict = {
     `Salvataggio locale ${p.done}/${p.total}`,
   'sidebar.savingDemosFile': (p: { name: string; done: number; total: number }) =>
     `Scrittura di ${p.name} (${p.done}/${p.total})`,
-  'sidebar.currentPath': (p: { path: string }) => `Cartella corrente: ${p.path}`,
   'sidebar.uncategorized': 'Non categorizzati',
 
   'menu.rename': 'Rinomina',

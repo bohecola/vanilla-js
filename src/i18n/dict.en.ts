@@ -187,7 +187,6 @@ export const en: Dict = {
   'menu.rename': 'Rename',
   'menu.delete': 'Delete',
   'menu.copyPath': 'Copy path',
-  'sidebar.currentPath': (p: { path: string }) => `Current folder: ${p.path}`,
   'menu.newFile': 'New file',
   'menu.newDir': 'New folder',
   'menu.removeRoot': 'Remove folder',

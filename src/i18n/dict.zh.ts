@@ -199,7 +199,6 @@ export const zh = {
   'menu.rename': '重命名',
   'menu.delete': '删除',
   'menu.copyPath': '复制路径',
-  'sidebar.currentPath': (p: { path: string }) => `当前目录：${p.path}`,
   'menu.newFile': '新建文件',
   'menu.newDir': '新建文件夹',
   'menu.removeRoot': '移除目录',

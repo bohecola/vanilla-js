@@ -174,7 +174,6 @@ export const vi: Dict = {
   'sidebar.savingDemos': (p: { done: number; total: number }) => `Đang lưu vào máy ${p.done}/${p.total}`,
   'sidebar.savingDemosFile': (p: { name: string; done: number; total: number }) =>
     `Đang ghi ${p.name} (${p.done}/${p.total})`,
-  'sidebar.currentPath': (p: { path: string }) => `Thư mục hiện tại: ${p.path}`,
   'sidebar.uncategorized': 'Chưa phân loại',
 
   'menu.rename': 'Đổi tên',
