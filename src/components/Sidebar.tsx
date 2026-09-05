@@ -389,7 +389,17 @@ function RootRow({
   }
 
   return (
-    <div className="group flex items-center gap-0.5 pr-1">
+    // 选中 / hover 的底色和描边画在整行（含右端的 ⋯）上，而不是只画在名字那个 button 上：
+    // 否则 ⋯ 会露在高亮区外面，像是行没铺满。行内动作叠在高亮上，同 VS Code 的资源管理器
+    <div
+      className={cn(
+        // 预留 1px 透明边框：选中时改成主色细框，四周都画得出来、不造成布局跳动
+        'group relative flex items-center border border-transparent pr-1',
+        selected
+          ? 'bg-[var(--list-active)] border-[var(--list-active-ring)]'
+          : 'hover:bg-[var(--panel-hover)]'
+      )}
+    >
       <button
         role="treeitem"
         aria-expanded={open}
@@ -418,14 +428,7 @@ function RootRow({
           setMenuOpen(true)
         }}
         style={{ paddingLeft: padOf(0) }}
-        className={cn(
-          // 预留 1px 透明边框：选中时改成主色细框，四周都画得出来、不造成布局跳动
-          'relative flex min-w-0 flex-1 items-center gap-1.5 border border-transparent py-1 pr-1 text-left text-[13px]',
-          // 选中行：无圆角平铺 + 四周 1px 细描边；hover 不盖掉选中
-          selected
-            ? 'bg-[var(--list-active)] border-[var(--list-active-ring)]'
-            : 'hover:bg-[var(--panel-hover)]'
-        )}
+        className="relative flex min-w-0 flex-1 items-center gap-1.5 py-1 pr-1 text-left text-[13px]"
       >
         <span className={ICON_SLOT}>
           {locked ? (
@@ -450,14 +453,18 @@ function RootRow({
           </span>
         )}
       </button>
-      {/* ⋯ 只在悬停 / 聚焦 / 菜单开着时露出来：目录多了之后，一排常驻的图标全是噪音 */}
+      {/* ⋯ 在悬停 / 聚焦 / 选中 / 菜单开着时露出来：目录多了之后，一排常驻的图标全是噪音；
+          选中行常显一枚，提示「当前目录有动作可做」 */}
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
             title={t('sidebar.rootMenu', { name: root.name })}
             aria-label={t('sidebar.rootMenu', { name: root.name })}
-            className="shrink-0 rounded-sm p-0.5 text-[var(--text-faint)] opacity-0 transition-opacity group-hover:opacity-100 hover:bg-[var(--panel-hover)] hover:text-[var(--text-body)] focus-visible:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
+            className={cn(
+              'shrink-0 rounded-sm p-0.5 text-[var(--text-faint)] transition-opacity hover:bg-[var(--panel-hover)] hover:text-[var(--text-body)] focus-visible:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100',
+              selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            )}
           >
             <Icon className="icon-[lucide--ellipsis] size-3.5" />
           </button>
