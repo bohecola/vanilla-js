@@ -190,7 +190,6 @@ export const en: Dict = {
   'sidebar.currentPath': (p: { path: string }) => `Current folder: ${p.path}`,
   'menu.newFile': 'New file',
   'menu.newDir': 'New folder',
-  'menu.refresh': 'Refresh',
   'menu.removeRoot': 'Remove folder',
 
   // ---- Console ----

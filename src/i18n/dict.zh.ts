@@ -202,7 +202,6 @@ export const zh = {
   'sidebar.currentPath': (p: { path: string }) => `当前目录：${p.path}`,
   'menu.newFile': '新建文件',
   'menu.newDir': '新建文件夹',
-  'menu.refresh': '刷新',
   'menu.removeRoot': '移除目录',
 
   // ---- Console ----

@@ -199,7 +199,6 @@ export const fr: Dict = {
   'menu.copyPath': 'Copier le chemin',
   'menu.newFile': 'Nouveau fichier',
   'menu.newDir': 'Nouveau dossier',
-  'menu.refresh': 'Actualiser',
   'menu.removeRoot': 'Retirer le dossier',
 
   // ---- Console ----

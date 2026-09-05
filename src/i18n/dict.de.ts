@@ -190,7 +190,6 @@ export const de: Dict = {
   'menu.copyPath': 'Pfad kopieren',
   'menu.newFile': 'Neue Datei',
   'menu.newDir': 'Neuer Ordner',
-  'menu.refresh': 'Aktualisieren',
   'menu.removeRoot': 'Ordner entfernen',
 
   'console.empty': '// Konsolenausgabe erscheint hier',

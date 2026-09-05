@@ -182,7 +182,6 @@ export const vi: Dict = {
   'menu.copyPath': 'Sao chép đường dẫn',
   'menu.newFile': 'Tệp mới',
   'menu.newDir': 'Thư mục mới',
-  'menu.refresh': 'Làm mới',
   'menu.removeRoot': 'Gỡ thư mục',
 
   'console.empty': '// kết quả console sẽ hiển thị ở đây',

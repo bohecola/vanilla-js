@@ -185,7 +185,6 @@ export const ja: Dict = {
   'menu.copyPath': 'パスをコピー',
   'menu.newFile': '新しいファイル',
   'menu.newDir': '新しいフォルダー',
-  'menu.refresh': '再読み込み',
   'menu.removeRoot': 'フォルダーを取り外す',
 
   'console.empty': '// console の出力がここに表示されます',

@@ -195,7 +195,6 @@ export const zhHant: Dict = {
   'menu.copyPath': '複製路徑',
   'menu.newFile': '新增檔案',
   'menu.newDir': '新增資料夾',
-  'menu.refresh': '重新整理',
   'menu.removeRoot': '移除目錄',
 
   // ---- Console ----

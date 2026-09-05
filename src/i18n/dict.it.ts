@@ -191,7 +191,6 @@ export const it: Dict = {
   'menu.copyPath': 'Copia percorso',
   'menu.newFile': 'Nuovo file',
   'menu.newDir': 'Nuova cartella',
-  'menu.refresh': 'Aggiorna',
   'menu.removeRoot': 'Rimuovi cartella',
 
   'console.empty': '// qui compare l\'output della console',

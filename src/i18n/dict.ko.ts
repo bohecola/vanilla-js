@@ -185,7 +185,6 @@ export const ko: Dict = {
   'menu.copyPath': '경로 복사',
   'menu.newFile': '새 파일',
   'menu.newDir': '새 폴더',
-  'menu.refresh': '새로고침',
   'menu.removeRoot': '폴더 제거',
 
   'console.empty': '// console 출력이 여기에 표시됩니다',

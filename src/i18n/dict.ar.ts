@@ -182,7 +182,6 @@ export const ar: Dict = {
   'menu.copyPath': 'نسخ المسار',
   'menu.newFile': 'ملف جديد',
   'menu.newDir': 'مجلد جديد',
-  'menu.refresh': 'تحديث',
   'menu.removeRoot': 'إزالة المجلد',
 
   'console.empty': '// سيعرض إخراج console هنا',

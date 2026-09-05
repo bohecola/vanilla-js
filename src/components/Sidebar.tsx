@@ -8,6 +8,7 @@ import {
   ContextMenuItem,
   ContextMenuShortcut,
   ContextMenuTrigger,
+  ContextMenuSeparator,
 } from '@/components/ui/context-menu'
 import {
   DropdownMenu,
@@ -233,12 +234,15 @@ function EntryMenu({
   onRename,
   onDelete,
   onCopyPath,
+  onCreate,
   children,
 }: {
   entry: Entry
   onRename: (entry: Entry) => void
   onDelete: (entry: Entry) => void
   onCopyPath: (path: string) => void
+  /** 目录行才有：在这个目录里新建文件 / 文件夹（与根目录菜单里的一致） */
+  onCreate?: (kind: 'file' | 'directory') => void
   children: React.ReactNode
 }) {
   const { t } = useI18n()
@@ -247,10 +251,23 @@ function EntryMenu({
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent
         className="min-w-[10rem]"
-        // 菜单关掉时不要把焦点还给那一行：重命名会当场把这一行换成输入框，
-        // 焦点被抢回去等于触发输入框的失焦取消，这次改名就没了
+        // 菜单关掉时不要把焦点还给那一行：重命名 / 新建会当场在树里插一个输入框，
+        // 焦点被抢回去等于触发输入框的失焦取消，这次操作就没了
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
+        {onCreate && (
+          <>
+            <ContextMenuItem onSelect={() => onCreate('file')}>
+              <Icon className="icon-[codicon--new-file]" />
+              {t('menu.newFile')}
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => onCreate('directory')}>
+              <Icon className="icon-[codicon--new-folder]" />
+              {t('menu.newDir')}
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
         <ContextMenuItem onSelect={() => onCopyPath(entry.path)}>
           <Icon className="icon-[lucide--copy]" />
           {t('menu.copyPath')}
@@ -501,14 +518,6 @@ function RootRow({
                 <Icon className="icon-[codicon--new-folder]" />
                 {t('menu.newDir')}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => {
-                  afterCloseRef.current = () => void workspace.refresh(root.id)
-                }}
-              >
-                <Icon className="icon-[codicon--refresh]" />
-                {t('menu.refresh')}
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
             </>
           )}
@@ -585,6 +594,12 @@ function Tree({
             onRename={onRenameEntry}
             onDelete={onDeleteEntry}
             onCopyPath={onCopyPath}
+            // 在这个目录里新建：先把它设为新建目标（draft.start 会顺手展开它）
+            onCreate={(kind) => {
+              workspace.select(entry.path)
+              onSelect(dirSelId(entry.path))
+              draft.start(kind, { parentPath: entry.path })
+            }}
           >
             <Row
               depth={depth}
