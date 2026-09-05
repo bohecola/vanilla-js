@@ -54,6 +54,25 @@ function systemPref(): EffectiveTheme {
   return window.matchMedia(LIGHT_QUERY).matches ? 'light' : 'dark'
 }
 
+/*
+  切主题的那一瞬间把页面上所有过渡关掉。
+
+  很多控件（shadcn 的按钮 transition-all、页签 / 开关的 transition-colors）会把颜色变化
+  渐变 150ms，而没写过渡的背景是瞬间变的，切换明暗时就会一块快一块慢。主流要么全部
+  瞬时（VS Code、GitHub），要么全部统一渐变；这里选瞬时，做法同 next-themes 的
+  disableTransitionOnChange：临时塞一条 `* { transition: none !important }`，属性改完、
+  样式算完再摘掉。
+*/
+function withoutTransitions(apply: () => void) {
+  const style = document.createElement('style')
+  style.textContent = '*,*::before,*::after{transition:none!important;animation-duration:0s!important}'
+  document.head.appendChild(style)
+  apply()
+  // 强制一次样式计算，让新值在「无过渡」状态下落地；下一帧再把规则拿掉
+  void window.getComputedStyle(document.body).opacity
+  requestAnimationFrame(() => style.remove())
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<ThemeMode>(getInitialMode)
   const [accent, setAccent] = useState<Accent>(getInitialAccent)
@@ -78,12 +97,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // color-scheme 交给 index.css 里的 [data-theme] 规则，不在这里写内联样式，
   // 避免同一属性存在两处来源。
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', effective)
+    withoutTransitions(() => document.documentElement.setAttribute('data-theme', effective))
   }, [effective])
 
   // 配色通过 data-accent 驱动 index.css 里那组高亮主色变量（蓝 / 粉 / 橙 / 绿）。
   useEffect(() => {
-    document.documentElement.setAttribute('data-accent', accent)
+    withoutTransitions(() => document.documentElement.setAttribute('data-accent', accent))
   }, [accent])
 
   // 持久化用户选择
