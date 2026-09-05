@@ -28,7 +28,7 @@ const BINDING_IMPORT = /^[ \t]*import[ \t]+([\s\S]*?)[ \t\n]+from[ \t]*(['"])([^
 
 /**
  * 返回代码里所有静态 import 的模块名（去重，保持出现顺序）。
- * 纯类型导入（import type ...）不算：esbuild 编译 TS 时会把它们整段擦掉。
+ * 纯类型导入（import type ...）不算：TS 编译时会把它们整段擦掉。
  */
 export function findStaticImports(code: string): string[] {
   const specs: string[] = []

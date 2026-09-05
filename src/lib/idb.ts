@@ -27,7 +27,19 @@ function openDb(): Promise<IDBDatabase> {
         req.result.createObjectStore(STORE)
       }
     }
-    req.onsuccess = () => resolve(req.result)
+    req.onsuccess = () => {
+      const db = req.result
+      // 连接被外力关掉（DevTools 清站点数据、别的标签页升级了库版本）后，
+      // 这个 db 上的每次 transaction 都会抛 InvalidStateError。把缓存清掉，下次重新 open。
+      db.onversionchange = () => {
+        db.close()
+        if (dbPromise === opening) dbPromise = null
+      }
+      db.onclose = () => {
+        if (dbPromise === opening) dbPromise = null
+      }
+      resolve(db)
+    }
     req.onerror = () => reject(req.error ?? new AppError('err.idb.open'))
     // 隐私模式或站点数据被清理时可能直接被拒
     req.onblocked = () => reject(new AppError('err.idb.blocked'))

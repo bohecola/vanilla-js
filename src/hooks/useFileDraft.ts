@@ -10,6 +10,7 @@ import {
 import { messageOf, useI18n, type T } from '@/i18n/context'
 import type { Problem } from '@/lib/app-error'
 import type { Workspace } from './useWorkspace'
+import { parentOf } from './useWorkspace'
 import type { Confirm } from './useConfirm'
 
 /*
@@ -86,8 +87,6 @@ interface Callbacks {
 const defaultName = (kind: DraftKind, t: T): string =>
   kind === 'file' ? t('file.untitled', { ext: 'js' }) : t('file.newDir')
 
-const parentOf = (path: string) => path.slice(0, path.lastIndexOf('/'))
-
 export function useFileDraft(
   workspace: Workspace,
   confirm: Confirm,
@@ -112,6 +111,7 @@ export function useFileDraft(
   const fail = (error: Problem) => setDraft((prev) => (prev ? { ...prev, error } : prev))
 
   const start: FileDraft['start'] = (kind, opts = {}) => {
+    if (busy) return // 上一次提交还在写盘：runCreate 收尾的 setDraft(null) 会把新开的输入框抹掉
     const parentPath = opts.parentPath ?? workspace.target
     if (!parentPath) return // 一个可用目录都没有，没地方建
     setDraft({
@@ -128,6 +128,7 @@ export function useFileDraft(
   }
 
   const startRename: FileDraft['startRename'] = (entry) => {
+    if (busy) return
     setDraft({
       mode: 'rename',
       parentPath: parentOf(entry.path),
@@ -248,7 +249,11 @@ export function useFileDraft(
     start,
     startRename,
     setName: (name) => setDraft((prev) => (prev ? { ...prev, name, error: null } : prev)),
-    cancel: () => setDraft(null),
+    // 提交中不响应取消：目录改名会弹确认框抢焦点，输入框的 onBlur 会跟着调 cancel，
+    // 用户在确认框里点「取消」后草稿已经没了、没法重试
+    cancel: () => {
+      if (!busy) setDraft(null)
+    },
     submit,
   }
 }

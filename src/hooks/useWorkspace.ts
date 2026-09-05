@@ -9,6 +9,7 @@ import {
   createFile,
   ensurePermission,
   isIgnoredDir,
+  isPermissionError,
   isStaleHandleError,
   isSupported,
   listDirectory,
@@ -106,7 +107,8 @@ function writeExpanded(paths: string[]): void {
   }
 }
 
-const parentOf = (path: string) => {
+/** 路径的父目录；顶层（没有斜杠）返回空串 */
+export const parentOf = (path: string) => {
   const i = path.lastIndexOf('/')
   return i === -1 ? '' : path.slice(0, i)
 }
@@ -333,6 +335,14 @@ export function useWorkspace(): Workspace {
         // 目录没了就别在列表里挂着（roots 落盘的 effect 会跟着把它从 IndexedDB 里去掉）
         setRoots((prev) => prev.filter((r) => r.id !== root.id))
         setError(tRef.current('err.ws.rootMoved', { name: root.name }))
+      } else if (isPermissionError(err)) {
+        // 权限被撤销：目录还在，留在列表里等用户再点一次授权，别当成「已移动」删掉
+        setRoots((prev) =>
+          prev.some((r) => r.id === root.id)
+            ? prev.map((r) => (r.id === root.id ? { ...r, needsPermission: true } : r))
+            : [...prev, { ...root, needsPermission: true }]
+        )
+        setError(tRef.current('err.ws.permissionDenied', { name: root.name }))
       } else {
         setError(messageOf(err, tRef.current))
       }
@@ -682,13 +692,21 @@ export function useWorkspace(): Workspace {
           setError(null)
           return null
         }
-        // 其他错误：保留「进行中」记录，下次打开可据此提示清理；也删掉半成品目录
+        // 其他错误：先试着把半成品目录删掉；删掉了就连「进行中」记录一起清，
+        // 否则下次启动会弹一个「清理残留」的确认框，用户点了之后却发现目录早就不在了。
+        // 删不掉（比如权限中途被撤）才留着记录，下次启动据此提示清理。
         try {
           sessionStorage.removeItem(DEMO_SAVING_KEY)
         } catch {
           /* ignore */
         }
-        if (dir) await removeEntry(parent, dir.name, 'directory').catch(() => {})
+        if (dir) {
+          const removed = await removeEntry(parent, dir.name, 'directory').then(
+            () => true,
+            () => false
+          )
+          if (removed) await idbDel(DEMO_SAVE_KEY).catch(() => {})
+        }
         setError(messageOf(err, tRef.current))
         return null
       } finally {

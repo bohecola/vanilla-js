@@ -13,6 +13,9 @@
 import { compact, partition, range } from 'lodash-es'
 
 import { AppError, type Problem } from './app-error'
+// 文件类型判断搬到了 file-types.ts；这里保留再导出，调用方不用改 import
+export { isRunnable, extOf, languageOf } from './file-types'
+
 
 /** 目录列举的两道闸：一是不进这些目录，二是单目录条目上限。 */
 const IGNORED_DIRS = new Set([
@@ -48,40 +51,6 @@ export const MAX_ENTRIES_PER_DIR = 500
 /** 打开文件的体积上限：Monaco 在几 MB 的单文件上会明显卡顿。 */
 export const MAX_FILE_SIZE = 2 * 1024 * 1024
 
-/** 后缀 → Monaco 语言 id。不在表里的按「非文本」处理，点击时给提示而不是硬塞进编辑器。 */
-const LANGUAGE_BY_EXT: Record<string, string> = {
-  js: 'javascript',
-  mjs: 'javascript',
-  cjs: 'javascript',
-  jsx: 'javascript',
-  ts: 'typescript',
-  mts: 'typescript',
-  cts: 'typescript',
-  tsx: 'typescript',
-  json: 'json',
-  jsonc: 'json',
-  html: 'html',
-  htm: 'html',
-  css: 'css',
-  scss: 'scss',
-  less: 'less',
-  md: 'markdown',
-  markdown: 'markdown',
-  yml: 'yaml',
-  yaml: 'yaml',
-  xml: 'xml',
-  svg: 'xml',
-  sh: 'shell',
-  bash: 'shell',
-  sql: 'sql',
-  txt: 'plaintext',
-  log: 'plaintext',
-  env: 'plaintext',
-  gitignore: 'plaintext',
-  editorconfig: 'plaintext',
-  npmrc: 'plaintext',
-}
-
 /**
  * Windows 的保留设备名。以这些名字（不论后缀）建文件会直接失败，
  * 而报错信息是底层的一句 NotAllowedError，说不清到底哪里不对。
@@ -94,23 +63,6 @@ const RESERVED_NAMES = new Set([
   ...range(1, 10).map((n) => `COM${n}`),
   ...range(1, 10).map((n) => `LPT${n}`),
 ])
-
-/** 能交给 runner 执行的语言（runner 是没有 DOM 的 Web Worker，只跑 JS/TS）。 */
-export function isRunnable(language: string): boolean {
-  return language === 'javascript' || language === 'typescript'
-}
-
-export function extOf(name: string): string {
-  const dot = name.lastIndexOf('.')
-  // 「.gitignore」这类以点开头、没有真正后缀的文件，整个名字当后缀看
-  if (dot <= 0) return name.replace(/^\./, '').toLowerCase()
-  return name.slice(dot + 1).toLowerCase()
-}
-
-/** 推断 Monaco 语言 id；无法识别时返回 null（视为非文本文件）。 */
-export function languageOf(name: string): string | null {
-  return LANGUAGE_BY_EXT[extOf(name)] ?? null
-}
 
 export function isSupported(): boolean {
   return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function'
@@ -162,9 +114,18 @@ export async function ensurePermission(
   }
 }
 
-/** handle 是否已经失效（目录被改名、移动、删除，或所在磁盘不在了）。 */
+/** handle 指向的东西已经不在了（目录被改名、移动、删除，或所在磁盘不在了）。 */
 export function isStaleHandleError(err: unknown): boolean {
-  return err instanceof DOMException && (err.name === 'NotFoundError' || err.name === 'NotAllowedError')
+  return err instanceof DOMException && err.name === 'NotFoundError'
+}
+
+/**
+ * 没有权限：授权被撤销、文件只读、或被别的程序锁住（Windows）。
+ * 以前和「不存在」混在一起，只读文件也会被当成「已不在磁盘上」，
+ * 启动时更会把根目录从列表里永久删掉。
+ */
+export function isPermissionError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'NotAllowedError'
 }
 
 export interface FileEntry {

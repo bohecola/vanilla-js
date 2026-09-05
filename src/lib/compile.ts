@@ -1,80 +1,59 @@
-// TS → JS 编译（主线程）。
+// TS → JS 编译：直接用 Monaco 自带的 TypeScript 语言服务（ts.worker）。
 //
-// 为什么不放在运行用的 worker 里：为了能 terminate 掉 while(true) 这类死循环，
-// 每次「运行」都会新建一个 runner worker；esbuild 的 wasm 有 ~10MB，
-// 放在 runner worker 里就意味着每点一次 Run 都要重新实例化一次 wasm。
-// 放在主线程模块里，wasm 只在首次需要时初始化一次，之后所有运行复用。
-// esbuild 自己会另起 worker 跑 wasm（initialize 默认 worker: true），不阻塞 UI。
-import * as esbuild from 'esbuild-wasm/esm/browser.js'
-import esbuildWasmUrl from 'esbuild-wasm/esbuild.wasm?url'
-import { get } from 'lodash-es'
+// 它本来就为了补全 / 诊断常驻着，编辑器里每个文件都是它的一份「脚本」，
+// 让它顺手 emit 一份 JS 就够了 —— 不必再拖一个 14MB 的 esbuild.wasm 只为剥类型。
+// 代价是编译比 esbuild 慢一点（几十毫秒量级），playground 里感觉不出来。
+import { monaco, modelUri } from '@/monaco/setup'
 import { AppError } from './app-error'
 import { stripExports } from './strip-exports'
 import type { CompileIssue } from '@/i18n/dict.zh'
 
-// 初始化状态缓存（Promise 复用，避免并发/重复初始化）
-let esbuildReady: Promise<void> | null = null
-
-function ensureEsbuild(): Promise<void> {
-  if (!esbuildReady) {
-    esbuildReady = esbuild.initialize({ wasmURL: esbuildWasmUrl }).catch((err) => {
-      esbuildReady = null // 失败后允许下次重试
-      throw new AppError('err.compile.initFailed', {
-        message: err instanceof Error ? err.message : String(err),
-      })
-    })
-  }
-  return esbuildReady
+/** 把语法诊断整理成一条待翻译的错误；位置从 0 基偏移换成行列 */
+function compileError(model: monaco.editor.ITextModel, diagnostics: monaco.typescript.Diagnostic[]): AppError {
+  const issues: CompileIssue[] = diagnostics.map((d) => {
+    const pos = typeof d.start === 'number' ? model.getPositionAt(d.start) : null
+    return {
+      text: flattenMessage(d.messageText),
+      loc: pos ? { line: pos.lineNumber, column: pos.column } : null,
+    }
+  })
+  return new AppError('err.compile.failed', { issues })
 }
 
-/** 预热编译器：切到 TS 时提前实例化 wasm，减少首次「运行」的等待。 */
-export function warmupCompiler(): void {
-  void ensureEsbuild().catch(() => {
-    /* 预热失败不打扰用户，真正运行时会再试一次并报错 */
-  })
-}
-
-// 把 esbuild 的编译错误整理成一条待翻译的错误。
-//
-// 这里只做「取出结构、把列号从 0 基改成 1 基」，句子怎么拼（分隔符、位置的写法、
-// 拿不到文案时的兜底词）全在字典里 —— 那些都是随语言变的东西。
-function formatCompileError(err: unknown): AppError {
-  // 用 get 探一层：err 是 unknown，手写的话得先铺一整段结构体类型再断言
-  const errors = get(err, 'errors') as
-    | Array<{ text?: string; location?: { line?: number; column?: number } | null }>
-    | undefined
-  if (Array.isArray(errors) && errors.length > 0) {
-    const issues: CompileIssue[] = errors.map((e) => ({
-      text: e.text ?? '',
-      // esbuild 的 column 是 0 基的，+1 在这里做完，字典只负责印数字
-      loc: e.location ? { line: e.location.line ?? 0, column: (e.location.column ?? 0) + 1 } : null,
-    }))
-    return new AppError('err.compile.failed', { issues })
-  }
-  return new AppError('err.compile.raw', {
-    message: err instanceof Error ? err.message : String(err),
-  })
+// TS 的 messageText 可能是一条链（DiagnosticMessageChain），取第一层就够看
+function flattenMessage(text: monaco.typescript.Diagnostic['messageText']): string {
+  return typeof text === 'string' ? text : text.messageText
 }
 
 /**
  * 把用户代码编译成可以直接在 eval（脚本上下文）里执行的 JS。
- * - typescript：先用 esbuild 去掉类型语法，再剥离 export
+ * - typescript：交给 Monaco 的 TS worker emit（只剥类型，不做类型检查；语法错误会拦下），再剥离 export
  * - javascript：原样返回，只剥离 export（导入的 ES module 文件也能直接跑）
+ *
+ * key 是编辑器里 model 的 key（同 EditorHandle 的 key）。TS 路径需要它找到对应 model：
+ * 语言服务按 model 工作，而不是按一段字符串。找不到 model（理论上不会）就临时建一个。
  */
-export async function compileToJs(code: string, language: string): Promise<string> {
+export async function compileToJs(code: string, language: string, key?: string): Promise<string> {
   if (language !== 'typescript') return stripExports(code)
 
-  await ensureEsbuild()
+  const existing = key ? monaco.editor.getModel(modelUri(key)) : null
+  const model = existing ?? monaco.editor.createModel(code, 'typescript', modelUri(`__compile__${Date.now()}`))
   try {
-    const result = await esbuild.transform(code, {
-      loader: 'ts',
-      // es2022 而不是 es2020：低于 es2022 时 esbuild 会直接拒绝顶层 await
-      //（"Top-level await is not available in the configured target environment"），
-      // 而 worker 里是用 async 函数包起来执行的，顶层 await 是支持的
-      target: 'es2022',
-    })
-    return stripExports(result.code)
+    // 用户可能刚敲完就按了运行：model 里的内容和传进来的 code 应该一致，以传进来的为准
+    if (model.getValue() !== code) model.setValue(code)
+    const uri = model.uri.toString()
+    const getWorker = await monaco.typescript.getTypeScriptWorker()
+    const worker = await getWorker(model.uri)
+    const syntax = await worker.getSyntacticDiagnostics(uri)
+    if (syntax.length > 0) throw compileError(model, syntax)
+    const out = await worker.getEmitOutput(uri)
+    const js = out.outputFiles.find((f) => f.name.endsWith('.js'))?.text
+    if (js === undefined) throw new AppError('err.compile.raw', { message: 'TypeScript emitted no output' })
+    return stripExports(js)
   } catch (err) {
-    throw formatCompileError(err)
+    if (err instanceof AppError) throw err
+    throw new AppError('err.compile.raw', { message: err instanceof Error ? err.message : String(err) })
+  } finally {
+    if (!existing) model.dispose()
   }
 }

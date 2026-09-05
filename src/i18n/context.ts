@@ -10,6 +10,7 @@
 import { createContext, useContext } from 'react'
 
 import { AppError, type Problem } from '@/lib/app-error'
+import { langFromTag, type Lang } from './langs'
 
 import { en } from './dict.en'
 import { fr } from './dict.fr'
@@ -31,7 +32,7 @@ import { zh, type Dict } from './dict.zh'
  *   ar      العربية     zhHant  繁體中文
  * 键名即 localStorage 里存的取值（zh 沿用历史键值，老用户的偏好不用迁移）。
  */
-export type Lang = 'zh' | 'zhHant' | 'en' | 'fr' | 'de' | 'it' | 'ko' | 'ja' | 'vi' | 'pt' | 'ar'
+export type { Lang }
 /** 用户的选择：明确指定，或跟随系统 —— 与 ThemeMode 同构 */
 export type LangMode = Lang | 'system'
 
@@ -47,26 +48,6 @@ const DICTS: Record<Lang, Dict> = {
   vi,
   pt,
   ar,
-}
-
-/** 按 html 语言的 BCP 47 标签把某语言归位到我们的 Lang；认不出就回英文。 */
-function langFromTag(tag: string): Lang {
-  const primary = tag.split('-')[0].toLowerCase()
-  if (primary === 'zh') {
-    // 台湾 / 香港 / 澳门按繁中；其余 zh（大陆、新加坡简体区）按简体
-    const region = (tag.split('-')[1] || '').toUpperCase()
-    return region === 'TW' || region === 'HK' || region === 'MO' ? 'zhHant' : 'zh'
-  }
-  if (primary === 'en') return 'en'
-  if (primary === 'fr') return 'fr'
-  if (primary === 'de') return 'de'
-  if (primary === 'it') return 'it'
-  if (primary === 'ko') return 'ko'
-  if (primary === 'ja') return 'ja'
-  if (primary === 'vi') return 'vi'
-  if (primary === 'pt') return 'pt'
-  if (primary === 'ar') return 'ar'
-  return 'en'
 }
 
 /*
@@ -102,7 +83,8 @@ export function systemLang(): Lang {
 export function readLangMode(): LangMode {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved !== null && (saved === 'system' || saved in DICTS)) return saved as LangMode
+    // hasOwn 而不是 in：localStorage 里若被写成 'toString' 这种原型链上的名字，in 会放行
+    if (saved !== null && (saved === 'system' || Object.hasOwn(DICTS, saved))) return saved as LangMode
   } catch {
     // 隐私模式下 localStorage 直接抛，按默认走
   }
@@ -160,6 +142,8 @@ export function useI18n() {
 */
 export function messageOf(err: unknown, t: T): string {
   if (err instanceof AppError) return translate(err, t)
+  // 文件系统 API 的权限错误：浏览器给的英文原句又长又含糊，换成一句说得清的
+  if (err instanceof DOMException && err.name === 'NotAllowedError') return t('err.fs.notAllowed')
   return err instanceof Error ? err.message : String(err)
 }
 

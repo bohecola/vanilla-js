@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 
 /*
   一个 Promise 式的确认框。
@@ -50,5 +50,7 @@ export function useConfirm(): Confirm {
     resolveRef.current = null
   }, [])
 
-  return { request, ask, settle }
+  // 返回稳定对象：调用方把 confirm 整个放进 useCallback / useEffect 的依赖里，
+  // 每次渲染换一个新对象会让那些缓存全部失效，效果比不写 useCallback 还糟
+  return useMemo(() => ({ request, ask, settle }), [request, ask, settle])
 }

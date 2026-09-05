@@ -1,31 +1,34 @@
 import * as monaco from 'monaco-editor'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
-import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
-import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker'
-import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker'
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 
+// 只有 JS / TS 是常用路径，它们的 worker 直接打进主包；
+// json / css / html 只在用户从本地目录打开这类文件时才用得到（合计 2MB 多），按需再下。
+// getWorker 允许返回 Promise<Worker>。
 self.MonacoEnvironment = {
   getWorker(_, label) {
     switch (label) {
       case 'json':
-        return new jsonWorker();
+        return import('monaco-editor/esm/vs/language/json/json.worker?worker').then((m) => new m.default())
       case 'css':
       case 'scss':
       case 'less':
-        return new cssWorker();
+        return import('monaco-editor/esm/vs/language/css/css.worker?worker').then((m) => new m.default())
       case 'html':
       case 'handlebars':
       case 'razor':
-        return new htmlWorker();
+        return import('monaco-editor/esm/vs/language/html/html.worker?worker').then((m) => new m.default())
       case 'typescript':
       case 'javascript':
-        return new tsWorker();
+        return new tsWorker()
       default:
-        return new editorWorker();
+        return new editorWorker()
     }
-  }
+  },
 }
+
+/** 编辑器里每个文件（key）对应的 model URI。Editor 建 model、compile 找 model 都用它 */
+export const modelUri = (key: string) => monaco.Uri.parse(`inmemory://jotter/${encodeURIComponent(key)}`)
 
 /*
   编辑器现在同时打开多个文件（每个文件一个 model），这会踩到 TS 语言服务的一个默认行为：
@@ -45,7 +48,7 @@ const SHARED_COMPILER_OPTIONS: monaco.typescript.CompilerOptions = {
   moduleDetection: 3,
   module: monaco.typescript.ModuleKind.ESNext,
   // 用 ESNext 而不是 ES2022：monaco 的 ScriptTarget 枚举停在 ES2020，
-  // 这里只影响补全和诊断，取最新一档不会比运行时（esbuild target es2022）更严。
+  // 这里既影响补全和诊断，也决定运行前 emit 出来的 JS 形态（顶层 await、class 字段等原样保留）。
   target: monaco.typescript.ScriptTarget.ESNext,
   // model 的 URI 是 inmemory://…，没有 .ts/.js 后缀也要能被语言服务接受
   allowNonTsExtensions: true,

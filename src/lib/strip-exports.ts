@@ -1,6 +1,6 @@
 // 剥离顶层的 export 语法。
 //
-// 用户代码（模板、导入的文件、esbuild 转出的 JS）最终都由 worker 里的 eval 执行，
+// 用户代码（模板、导入的文件、TS 编译出的 JS）最终都由 worker 里的 eval 执行，
 // 而 eval 是「脚本」上下文，出现 export 语句会直接抛 SyntaxError，所以运行前先去掉。
 //
 // 按行首匹配（缩进 + export 关键字），不会误伤普通字符串里的 "export "；
