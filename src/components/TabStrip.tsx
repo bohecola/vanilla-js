@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/context-menu'
 import { useI18n } from '@/i18n/context'
 import { startPointerDrag } from '@/lib/pointer-drag'
-import { isRtl } from '@/lib/platform'
+import { isRtl, shortcut } from '@/lib/platform'
 import type { ActiveFile } from '@/types'
 
 // Blink 下 RTL 溢出容器的 scrollLeft 是负区间 [-max, 0]（0=起点/最右，-max=尽头/最左），
@@ -209,10 +209,11 @@ export function TabStrip({
               <button
                 type="button"
                 aria-label={t('tab.closeAria', { name: tabName })}
-                title={t('tab.close')}
+                title={isActive ? `${t('tab.close')} (${shortcut.closeTab})` : t('tab.close')}
                 onClick={() => onClose(tab.key)}
                 className={cn(
-                  'my-auto flex h-6 w-5 shrink-0 items-center justify-center rounded-sm text-[var(--text-faint)] transition-opacity hover:bg-[var(--panel-hover)] hover:text-[var(--text-body)]',
+                  // 20px 正方形、圆角略大、四周留白，hover 底色不贴着 tab 的顶线 / 底边 / 右侧分隔线
+                  'my-auto me-1 flex size-5 shrink-0 items-center justify-center rounded-md text-[var(--text-faint)] transition-opacity hover:bg-[var(--panel-hover)] hover:text-[var(--text-body)]',
                   isActive
                     ? 'opacity-100'
                     : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100'

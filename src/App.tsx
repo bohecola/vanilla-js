@@ -90,6 +90,12 @@ function App() {
     menuCloseAll,
   } = useTabs({ editorRef, confirm, t, onEmpty: () => openScratch() })
 
+  // Alt+W：关掉当前激活的标签（⌘W / Ctrl+W 归浏览器，拦不住）
+  const closeActiveTab = useCallback(() => {
+    const key = activeRef.current?.key
+    if (key) void closeTab(key)
+  }, [activeRef, closeTab])
+
   // ---- 编辑器 / 控制台 水平分栏 ----
   // editorW 为 null 表示未拖过：两栏各占一半（编辑器与输出都 flex-1）。
   // 一旦拖过，就按像素记住编辑器宽度。两侧都可被拖小（不再锁编辑器 >= 一半），
@@ -756,6 +762,7 @@ function App() {
                 ref={editorRef}
                 onRun={runCode}
                 onStop={stopCode}
+                onCloseTab={closeActiveTab}
                 onDirtyChange={handleDirtyChange}
                 onSave={handleSave}
                 onCursorStatus={setCursor}

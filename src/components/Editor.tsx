@@ -3,6 +3,8 @@ import { monaco, modelUri } from '@/monaco/setup'
 import type { editor as MonacoEditorType, IDisposable } from 'monaco-editor'
 import { debounce, sortBy } from 'lodash-es'
 import { useTheme } from '@/theme/index'
+import { useSettings, fontFamilyOf, type EditorSettings } from '@/settings/context'
+import { resolveEditorTheme } from '@/monaco/themes'
 
 /*
   一个编辑器实例 + 每个文件一个 model。
@@ -68,6 +70,8 @@ interface EditorProps {
   onRun?: () => void
   /** Shift+F5（VS Code 的「停止调试」） */
   onStop?: () => void
+  /** Alt+W：关闭当前标签。⌘W / Ctrl+W 被浏览器保留，见 platform.ts 的 shortcut.closeTab */
+  onCloseTab?: () => void
   /** 光标位置或 model（切换文件）变化时上报当前光标 + 缩进，驱动状态栏 */
   onCursorStatus?: (status: CursorStatus) => void
 }
@@ -90,8 +94,20 @@ interface ModelRecord {
   lastUsed: number
 }
 
+/** 设置面板里那几项对应的 Monaco 选项（主题单独走 setTheme） */
+function editorOptions(s: EditorSettings): MonacoEditorType.IEditorOptions {
+  return {
+    fontSize: s.fontSize,
+    fontFamily: fontFamilyOf(s.fontFamily),
+    fontLigatures: s.fontLigatures,
+    wordWrap: s.wordWrap ? 'on' : 'off',
+    minimap: { enabled: s.minimap },
+    lineNumbers: s.lineNumbers ? 'on' : 'off',
+  }
+}
+
 const Editor = forwardRef<EditorHandle, EditorProps>(
-  ({ onDirtyChange, onSave, onRun, onStop, onCursorStatus }, ref) => {
+  ({ onDirtyChange, onSave, onRun, onStop, onCloseTab, onCursorStatus }, ref) => {
   const editorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const modelsRef = useRef(new Map<string, ModelRecord>())
@@ -101,16 +117,20 @@ const Editor = forwardRef<EditorHandle, EditorProps>(
   // 挂载 effect 跑之前 App 就可能调 open（父组件的 effect 后于子组件），先记下来
   const pendingOpenRef = useRef<OpenFileSpec | null>(null)
   const { effective } = useTheme()
+  const { settings } = useSettings()
 
   // 回调走 ref：Monaco 命令和 window 监听都只注册一次，
   // 直接闭包捕获 prop 会永远调用首次渲染那一版
-  const callbacksRef = useRef({ onDirtyChange, onSave, onRun, onStop, onCursorStatus })
-  callbacksRef.current = { onDirtyChange, onSave, onRun, onStop, onCursorStatus }
+  const callbacksRef = useRef({ onDirtyChange, onSave, onRun, onStop, onCloseTab, onCursorStatus })
+  callbacksRef.current = { onDirtyChange, onSave, onRun, onStop, onCloseTab, onCursorStatus }
 
   // 创建 effect 刻意不依赖主题，用 ref 读当前值 —— 主题变化由下面的 effect 增量应用，
   // 放进依赖数组会让编辑器被重建
   const themeRef = useRef(effective)
   themeRef.current = effective
+  // 同上：创建时读一次，之后由 updateOptions 增量应用
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
 
   // 保持同一个 debounce 实例，避免每次渲染新建导致 effect 重跑、Monaco 被反复 dispose
   const handleResize = useMemo(() => debounce(() => editorRef.current?.layout(), 100), [])
@@ -291,8 +311,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(
 
     const editor = monaco.editor.create(container, {
       model: null,
-      theme: themeRef.current === 'dark' ? 'vs-dark' : 'playground-light',
+      theme: resolveEditorTheme(settingsRef.current.editorTheme, themeRef.current),
       automaticLayout: true,
+      ...editorOptions(settingsRef.current),
     })
     editorRef.current = editor
 
@@ -308,6 +329,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(
     })
     editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F5, () => {
       callbacksRef.current.onStop?.()
+    })
+    editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyW, () => {
+      callbacksRef.current.onCloseTab?.()
     })
 
     // 状态栏的「Ln, Col / 缩进」：光标动了或换 model 就上报一次。缩进配置在 model 上
@@ -359,10 +383,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(
       const el = document.activeElement
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
       const mod = (e.ctrlKey || e.metaKey) && !e.altKey
+      // Alt+W 用 e.code 判断：Mac 上 Option+W 的 e.key 是「∑」
+      const altOnly = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey
       let action: (() => void) | undefined
       if (mod && e.key.toLowerCase() === 's') action = callbacksRef.current.onSave
       else if (mod && e.key === 'Enter') action = callbacksRef.current.onRun
       else if (e.shiftKey && e.key === 'F5') action = callbacksRef.current.onStop
+      else if (altOnly && e.code === 'KeyW') action = callbacksRef.current.onCloseTab
       if (!action) return
       e.preventDefault()
       action()
@@ -371,10 +398,15 @@ const Editor = forwardRef<EditorHandle, EditorProps>(
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  // 主题切换只改 Monaco 主题，不重建编辑器
+  // 主题切换只改 Monaco 主题，不重建编辑器。设置里选了具体主题就用它，'auto' 跟随界面明暗
   useEffect(() => {
-    monaco.editor.setTheme(effective === 'dark' ? 'vs-dark' : 'playground-light')
-  }, [effective])
+    monaco.editor.setTheme(resolveEditorTheme(settings.editorTheme, effective))
+  }, [effective, settings.editorTheme])
+
+  // 字号 / 字体 / 换行等：增量应用，不重建编辑器
+  useEffect(() => {
+    editorRef.current?.updateOptions(editorOptions(settings))
+  }, [settings])
 
   useImperativeHandle(ref, () => api, [api])
 
