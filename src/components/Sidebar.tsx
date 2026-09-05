@@ -1022,7 +1022,9 @@ export default function Sidebar({
       <div className="group relative min-h-0 flex-1">
         <div
           ref={vScrollRef}
-          className="v-scrollbar h-full min-h-0 overflow-y-auto pb-3"
+          // pe-px：面板右缘那根发丝线由下面的拖拽把手画在最后 1px 上，列表让出这 1px，
+          // 选中行的描边才不会被它盖住（否则右边框看不见）
+          className="v-scrollbar h-full min-h-0 overflow-y-auto pb-3 pe-px"
         >
         {/* ---- 本地目录 ---- */}
         {/* 分组标题吸顶（sticky），滚动时标题留在顶部、只有下面内容滚走（同 VS Code
